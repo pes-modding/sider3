@@ -407,8 +407,8 @@ DWORD install_func(LPVOID thread_param) {
 
     hook_call_point(_config->_hp_get_buffer_size,
         lcpk_get_buffer_size_cp, 6, 1);
-    hook_call_point(_config->_hp_create_buffer,
-        lcpk_create_buffer_cp, 6, 1);
+    //hook_call_point(_config->_hp_create_buffer,
+    //    lcpk_create_buffer_cp, 6, 1);
     hook_call_point(_config->_hp_after_read,
         lcpk_after_read_cp, 6, 2);
 
