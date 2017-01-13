@@ -571,8 +571,14 @@ DWORD lcpk_get_buffer_size(char* file_name, DWORD* p_org_size)
     {
         log_(L"Found file:: %s\n", fn);
         size = GetFileSize(handle,NULL);
-        log_(L"Corrected size: %d --> %d\n", *p_org_size, size);
-        *p_org_size = size;
+        if (size > *p_org_size) {
+            log_(L"Corrected size: %d --> %d\n", *p_org_size, size);
+            *p_org_size = size;
+        }
+        else {
+            log_(L"No need for size correction: %d (old) >= %d (new)\n",
+                    *p_org_size, size);
+        }
         CloseHandle(handle);
     }
 
@@ -686,7 +692,8 @@ DWORD lcpk_after_read(struct READ_STRUCT* rs)
             memset(s, 0, sizeof(s));
             Utf8::fUtf8ToUnicode(s, rs->filename);
 
-            log_(L"READ bytes into (%p) from: %s\n", rs->buffer, s);
+            log_(L"READ bytes into (%p) from: %s (0x%x)\n",
+                    rs->buffer, s, rs->size);
 
             // simple replacement
             wchar_t fn[512];
