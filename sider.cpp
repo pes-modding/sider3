@@ -13,11 +13,13 @@
 using namespace std;
 using namespace stdext;
 
+static DWORD get_target_addr(DWORD call_location);
 static void hook_call_point(DWORD addr, void* func, int codeShift, int numNops, bool addRetn=false);
 
 void lcpk_get_buffer_size_cp();
 void lcpk_create_buffer_cp();
 void lcpk_after_read_cp();
+void lcpk_lookup_file_cp();
 
 static DWORD dwThreadId;
 static DWORD hookingThreadId = 0;
@@ -30,6 +32,13 @@ wchar_t module_filename[MAX_PATH];
 wchar_t dll_log[MAX_PATH];
 wchar_t dll_ini[MAX_PATH];
 
+struct CPK_INFO {
+    DWORD dw0[8];
+    DWORD dw1;
+    char *cpk_filename;
+    DWORD dw2[6];
+};
+
 struct READ_STRUCT {
     DWORD dw0;
     DWORD cpkInfoTableAddr;
@@ -39,6 +48,9 @@ struct READ_STRUCT {
     DWORD dw2[0xd0/4];
     char filename[0x80];
 };
+
+// original call destination of "lookup_file"
+static DWORD _lookup_file_org = 0;
 
 bool is_game(false);
 bool patched(false);
@@ -142,6 +154,7 @@ public:
     DWORD _hp_get_buffer_size;
     DWORD _hp_create_buffer;
     DWORD _hp_after_read;
+    DWORD _hp_lookup_file;
 
     config_t(const wstring& section_name, const wchar_t* config_ini) : 
                  _section_name(section_name),
@@ -153,7 +166,8 @@ public:
                  _camera_dynamic_wide_angle_enabled(false),
                  _hp_get_buffer_size(0),
                  _hp_create_buffer(0),
-                 _hp_after_read(0)
+                 _hp_after_read(0),
+                 _hp_lookup_file(0)
     {
         _code_section = strdup(".text");
         wchar_t settings[32767];
@@ -187,6 +201,9 @@ public:
             }
             else if (wcscmp(L"hook.after-read", key.c_str())==0) {
                 swscanf(value.c_str(), L"0x%x", &_hp_after_read);
+            }
+            else if (wcscmp(L"hook.lookup-file", key.c_str())==0) {
+                swscanf(value.c_str(), L"0x%x", &_hp_lookup_file);
             }
 
             p += wcslen(p) + 1;
@@ -285,6 +302,21 @@ static bool is_pes(wchar_t* name)
     return false;
 }
 
+static DWORD get_target_addr(DWORD call_location)
+{
+    if (call_location) {
+        BYTE* bptr = (BYTE*)call_location;
+        DWORD protection = 0;
+        DWORD newProtection = PAGE_EXECUTE_READWRITE;
+        if (VirtualProtect(bptr, 8, newProtection, &protection)) {
+            // get original target
+            DWORD* ptr = (DWORD*)(call_location + 1);
+            return (DWORD)(ptr[0] + call_location + 5);
+        }
+    }
+    return 0;
+}
+
 static void hook_call_point(DWORD addr, void* func, int codeShift, int numNops, bool addRetn)
 {
     DWORD target = (DWORD)func + codeShift;
@@ -379,6 +411,10 @@ DWORD install_func(LPVOID thread_param) {
         lcpk_create_buffer_cp, 6, 1);
     hook_call_point(_config->_hp_after_read,
         lcpk_after_read_cp, 6, 2);
+
+    _lookup_file_org = get_target_addr(_config->_hp_lookup_file);
+    hook_call_point(_config->_hp_lookup_file,
+        lcpk_lookup_file_cp, 6, 0);
 
     base += h->VirtualAddress;
 
@@ -543,6 +579,36 @@ DWORD install_func(LPVOID thread_param) {
     }
 
     return 0;
+}
+
+bool have_live_file(char *file_name)
+{
+    wchar_t unicode_filename[512];
+    memset(unicode_filename, 0, sizeof(unicode_filename));
+    Utf8::fUtf8ToUnicode(unicode_filename, file_name);
+
+    wchar_t fn[512];
+    memset(fn, 0, sizeof(fn));
+    wcscpy(fn, _config->_cpk_root.c_str());
+    wcscat(fn, unicode_filename);
+
+    DWORD size = 0;
+    HANDLE handle;
+    handle = CreateFileW(fn,           // file to open
+                       GENERIC_READ,          // open for reading
+                       FILE_SHARE_READ,       // share for reading
+                       NULL,                  // default security
+                       OPEN_EXISTING,         // existing file only
+                       FILE_ATTRIBUTE_NORMAL,  // normal file
+                       NULL);                 // no attr. template
+
+    if (handle != INVALID_HANDLE_VALUE)
+    {
+        CloseHandle(handle);
+        return true;
+    }
+
+    return false;
 }
 
 DWORD lcpk_get_buffer_size(char* file_name, DWORD* p_org_size)
@@ -761,6 +827,50 @@ void lcpk_after_read_cp()
     }
 }
 
+DWORD lcpk_lookup_file(char *filename, struct CPK_INFO* cpk_info)
+{
+    if (cpk_info && cpk_info->cpk_filename) {
+        if (memcmp(
+            //cpk_info->cpk_filename, ".\\Data\\dt00_win.cpk")==0) {
+            cpk_info->cpk_filename + 7, "dt00_win", 8)==0) {
+            if (have_live_file(filename)) {
+                // replace with a known original file
+                strcpy(filename, "\\common\\etc\\TeamColor.bin");
+            }
+        }
+    }
+    return 0;
+}
+
+void lcpk_lookup_file_cp()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        pushfd
+        push ebp
+        push eax
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        push esi  // pointer cpk-info struct
+        push edx  // pointer to filename on stack
+        call lcpk_lookup_file
+        add esp,0x08     // pop parameters
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop eax
+        pop ebp
+        popfd
+        jmp _lookup_file_org // jump to original target
+    }
+}
 
 INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved) 
 {
