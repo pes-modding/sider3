@@ -27,6 +27,7 @@ static HMODULE myHDLL;
 static HHOOK handle;
 
 hash_map<DWORD*,string> _assoc;
+hash_map<string,DWORD> _lookup_cache;
 
 wchar_t module_filename[MAX_PATH];
 wchar_t dll_log[MAX_PATH];
@@ -581,7 +582,7 @@ DWORD install_func(LPVOID thread_param) {
     return 0;
 }
 
-bool have_live_file(char *file_name)
+DWORD _have_live_file(char *file_name)
 {
     wchar_t unicode_filename[512];
     memset(unicode_filename, 0, sizeof(unicode_filename));
@@ -604,11 +605,27 @@ bool have_live_file(char *file_name)
 
     if (handle != INVALID_HANDLE_VALUE)
     {
+        size = GetFileSize(handle,NULL);
         CloseHandle(handle);
-        return true;
+        return size;
     }
 
-    return false;
+    return 0;
+}
+
+bool have_live_file(char *file_name)
+{
+    hash_map<string,DWORD>::iterator it;
+    it = _lookup_cache.find(string(file_name));
+    if (it != _lookup_cache.end()) {
+        return it->second != 0;
+    }
+    else {
+        log_(L"_lookup_cache MISS\n");
+        DWORD res = _have_live_file(file_name);
+        _lookup_cache.insert(pair<string,DWORD>(string(file_name),res));
+        return res != 0;
+    }
 }
 
 DWORD lcpk_get_buffer_size(char* file_name, DWORD* p_org_size)
