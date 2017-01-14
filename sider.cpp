@@ -283,6 +283,17 @@ void read_configuration(config_t*& config)
     }
 }
 
+static bool is_sider(wchar_t* name)
+{
+    wchar_t *filename = wcsrchr(name, L'\\');
+    if (filename) {
+        if (wcsicmp(filename, L"\\sider.exe") == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool is_pes(wchar_t* name)
 {
     if (_config) {
@@ -925,6 +936,10 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
                     log_(L"PROBLEM creating thread.\n");
                 }
             }
+            else if (!is_sider(module_filename)) {
+                return FALSE;
+            }
+
             break;
 
         case DLL_PROCESS_DETACH:
@@ -1048,7 +1063,7 @@ LRESULT CALLBACK meconnect(int code, WPARAM wParam, LPARAM lParam)
 
 void setHook()
 {
-    handle = SetWindowsHookEx(WH_KEYBOARD, meconnect, myHDLL, 0);
+    handle = SetWindowsHookEx(WH_CBT, meconnect, myHDLL, 0);
     log_(L"---\n");
     log_(L"handle = %p\n", handle);
 }
