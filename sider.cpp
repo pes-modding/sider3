@@ -27,7 +27,7 @@ static HMODULE myHDLL;
 static HHOOK handle;
 
 hash_map<DWORD*,string> _assoc;
-hash_map<string,DWORD> _lookup_cache;
+hash_map<string,wstring*> _lookup_cache;
 
 wchar_t module_filename[MAX_PATH];
 wchar_t dll_log[MAX_PATH];
@@ -145,7 +145,7 @@ public:
     bool _debug;
     char *_code_section;
     wstring _section_name;
-    wstring _cpk_root;
+    list<wstring> _cpk_roots;
     list<wstring> _exe_names;
     bool _free_select_sides;
     bool _free_first_player;
@@ -184,7 +184,6 @@ public:
             string_strip_quotes(value);
 
             if (wcscmp(L"exe.name", key.c_str())==0) {
-                wstring root;
                 _exe_names.push_back(value);
             }
             else if (wcscmp(L"code.section", key.c_str())==0) {
@@ -192,7 +191,7 @@ public:
                 _code_section = (char *)Utf8::unicodeToUtf8(value.c_str());
             }
             else if (wcscmp(L"cpk.root", key.c_str())==0) {
-                _cpk_root = value;
+                _cpk_roots.push_back(value);
             }
             else if (wcscmp(L"hook.get-buffer-size", key.c_str())==0) {
                 swscanf(value.c_str(), L"0x%x", &_hp_get_buffer_size);
@@ -593,84 +592,87 @@ DWORD install_func(LPVOID thread_param) {
     return 0;
 }
 
-DWORD _have_live_file(char *file_name)
+wstring* _have_live_file(char *file_name)
 {
     wchar_t unicode_filename[512];
     memset(unicode_filename, 0, sizeof(unicode_filename));
     Utf8::fUtf8ToUnicode(unicode_filename, file_name);
 
     wchar_t fn[512];
-    memset(fn, 0, sizeof(fn));
-    wcscpy(fn, _config->_cpk_root.c_str());
-    wcscat(fn, unicode_filename);
+    for (list<wstring>::iterator it = _config->_cpk_roots.begin();
+            it != _config->_cpk_roots.end();
+            it++) {
+        memset(fn, 0, sizeof(fn));
+        wcscpy(fn, it->c_str());
+        wcscat(fn, unicode_filename);
 
-    DWORD size = 0;
-    HANDLE handle;
-    handle = CreateFileW(fn,           // file to open
-                       GENERIC_READ,          // open for reading
-                       FILE_SHARE_READ,       // share for reading
-                       NULL,                  // default security
-                       OPEN_EXISTING,         // existing file only
-                       FILE_ATTRIBUTE_NORMAL,  // normal file
-                       NULL);                 // no attr. template
+        DWORD size = 0;
+        HANDLE handle;
+        handle = CreateFileW(fn,           // file to open
+                           GENERIC_READ,          // open for reading
+                           FILE_SHARE_READ,       // share for reading
+                           NULL,                  // default security
+                           OPEN_EXISTING,         // existing file only
+                           FILE_ATTRIBUTE_NORMAL,  // normal file
+                           NULL);                 // no attr. template
 
-    if (handle != INVALID_HANDLE_VALUE)
-    {
-        size = GetFileSize(handle,NULL);
-        CloseHandle(handle);
-        return size;
+        if (handle != INVALID_HANDLE_VALUE)
+        {
+            CloseHandle(handle);
+            return new wstring(fn);
+        }
     }
 
-    return 0;
+    return NULL;
 }
 
-bool have_live_file(char *file_name)
+wstring* have_live_file(char *file_name)
 {
-    hash_map<string,DWORD>::iterator it;
+    hash_map<string,wstring*>::iterator it;
     it = _lookup_cache.find(string(file_name));
     if (it != _lookup_cache.end()) {
-        return it->second != 0;
+        return it->second;
     }
     else {
-        log_(L"_lookup_cache MISS\n");
-        DWORD res = _have_live_file(file_name);
-        _lookup_cache.insert(pair<string,DWORD>(string(file_name),res));
-        return res != 0;
+        //wchar_t s[128];
+        //memset(s, 0, sizeof(s));
+        //Utf8::fUtf8ToUnicode(s, file_name);
+        //log_(L"_lookup_cache MISS for (%s)\n", s);
+
+        wstring* res = _have_live_file(file_name);
+        _lookup_cache.insert(pair<string,wstring*>(string(file_name),res));
+        return res;
     }
 }
 
 DWORD lcpk_get_buffer_size(char* file_name, DWORD* p_org_size)
 {
-    wchar_t unicode_filename[512];
-    memset(unicode_filename, 0, sizeof(unicode_filename));
-    Utf8::fUtf8ToUnicode(unicode_filename, file_name);
+    wstring *fn = have_live_file(file_name);
+    if (fn != NULL) {
+        DWORD size = 0;
+        HANDLE handle;
+        handle = CreateFileW(fn->c_str(),           // file to open
+                           GENERIC_READ,          // open for reading
+                           FILE_SHARE_READ,       // share for reading
+                           NULL,                  // default security
+                           OPEN_EXISTING,         // existing file only
+                           FILE_ATTRIBUTE_NORMAL,  // normal file
+                           NULL);                 // no attr. template
 
-    // simple replacement
-    wchar_t fn[512];
-    memset(fn, 0, sizeof(fn));
-    wcscpy(fn, _config->_cpk_root.c_str());
-    wcscat(fn, unicode_filename);
-
-    DWORD size = 0;
-    HANDLE handle;
-    handle = CreateFileW(fn,           // file to open
-                       GENERIC_READ,          // open for reading
-                       FILE_SHARE_READ,       // share for reading
-                       NULL,                  // default security
-                       OPEN_EXISTING,         // existing file only
-                       FILE_ATTRIBUTE_NORMAL,  // normal file
-                       NULL);                 // no attr. template
-
-    if (handle != INVALID_HANDLE_VALUE)
-    {
-        log_(L"Found file:: %s\n", fn);
-        size = GetFileSize(handle,NULL);
-        log_(L"Corrected size: %d --> %d\n", *p_org_size, size);
-        *p_org_size = size;
-        CloseHandle(handle);
+        if (handle != INVALID_HANDLE_VALUE)
+        {
+            log_(L"Found file:: %s\n", fn->c_str());
+            size = GetFileSize(handle,NULL);
+            log_(L"Corrected size: %d --> %d\n", *p_org_size, size);
+            *p_org_size = size;
+            CloseHandle(handle);
+        }
     }
 
-    log_(L"File: %s, size: %d\n", unicode_filename, *p_org_size);
+    //wchar_t s[512];
+    //memset(s, 0, sizeof(s));
+    //Utf8::fUtf8ToUnicode(s, file_name);
+    //log_(L"File: %s, size: %d\n", s, *p_org_size);
     return 0;
 }
 
@@ -776,41 +778,37 @@ DWORD lcpk_after_read(struct READ_STRUCT* rs)
 {
     if (rs) {
         if (rs->filename) {
-            wchar_t s[512];
-            memset(s, 0, sizeof(s));
-            Utf8::fUtf8ToUnicode(s, rs->filename);
+            //wchar_t s[512];
+            //memset(s, 0, sizeof(s));
+            //Utf8::fUtf8ToUnicode(s, rs->filename);
 
-            log_(L"READ bytes into (%p) from: %s (%d)\n",
-                    rs->buffer, s, rs->size);
+            //log_(L"READ bytes into (%p) from: %s (%d)\n",
+            //        rs->buffer, s, rs->size);
 
-            // simple replacement
-            wchar_t fn[512];
-            memset(fn, 0, sizeof(fn));
-            wcscpy(fn, _config->_cpk_root.c_str());
-            wcscat(fn, s);
+            wstring *fn = have_live_file(rs->filename);
+            if (fn != NULL) {
+                DWORD size = 0;
+                HANDLE handle;
+                handle = CreateFileW(fn->c_str(),           // file to open
+                                   GENERIC_READ,          // open for reading
+                                   FILE_SHARE_READ,       // share for reading
+                                   NULL,                  // default security
+                                   OPEN_EXISTING,         // existing file only
+                                   FILE_ATTRIBUTE_NORMAL,  // normal file
+                                   NULL);                 // no attr. template
 
-            DWORD size = 0;
-            HANDLE handle;
-            handle = CreateFileW(fn,           // file to open
-                               GENERIC_READ,          // open for reading
-                               FILE_SHARE_READ,       // share for reading
-                               NULL,                  // default security
-                               OPEN_EXISTING,         // existing file only
-                               FILE_ATTRIBUTE_NORMAL,  // normal file
-                               NULL);                 // no attr. template
-
-            if (handle != INVALID_HANDLE_VALUE)
-            {
-                log_(L"Found file:: %s\n", fn);
-                size = GetFileSize(handle,NULL);
-                DWORD bytesRead = 0;
-                ReadFile(handle, rs->buffer, size, &bytesRead, NULL); 
-                if (bytesRead > 0) {
-                    log_(L"Read replacement data (%d bytes). HOORAY!\n", bytesRead);
+                if (handle != INVALID_HANDLE_VALUE)
+                {
+                    log_(L"Found file:: %s\n", fn->c_str());
+                    size = GetFileSize(handle,NULL);
+                    DWORD bytesRead = 0;
+                    ReadFile(handle, rs->buffer, size, &bytesRead, NULL); 
+                    if (bytesRead > 0) {
+                        log_(L"Read replacement data (%d bytes). HOORAY!\n", bytesRead);
+                    }
+                    CloseHandle(handle);
                 }
-                CloseHandle(handle);
             }
- 
         }
         else {
             log_(L"rs (buffer: %p), but no filename\n", rs->buffer);
@@ -855,7 +853,7 @@ DWORD lcpk_lookup_file(char *filename, struct CPK_INFO* cpk_info)
         if (memcmp(
             //cpk_info->cpk_filename, ".\\Data\\dt00_win.cpk")==0) {
             cpk_info->cpk_filename + 7, "dt00_win", 8)==0) {
-            if (have_live_file(filename)) {
+            if (have_live_file(filename) != NULL) {
                 // replace with a known original file
                 strcpy(filename, "\\common\\etc\\TeamColor.bin");
             }
