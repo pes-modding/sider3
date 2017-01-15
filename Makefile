@@ -11,6 +11,9 @@ EXTRA_CFLAGS=/DDEBUG
 EXTRA_CFLAGS=/DMYDLL_RELEASE_BUILD
 !endif
 
+LPZLIB=soft\zlib123-dll\lib
+ZLIBDLL=soft\zlib123-dll\zlib1.dll
+
 # 4731: warning about ebp modification
 CFLAGS=/nologo /Od /EHsc /wd4731 $(EXTRA_CFLAGS)
 LFLAGS=/NOLOGO
@@ -34,6 +37,10 @@ sider.dll: sider.obj imageutil.obj sider.res
 
 sider.exe: main.obj sider.dll sider_main.res
 	$(LINK) $(LFLAGS) /out:sider.exe main.obj sider_main.res $(LIBS) sider.lib
+
+zlibtool.obj: zlibtool.cpp
+zlibtool.exe: zlibtool.obj 
+    $(LINK) $(LFLAGS) /out:zlibtool.exe zlibtool.obj /LIBPATH:$(LPZLIB) $(LIBS) zdll.lib
 
 .cpp.obj:
 	$(CC) $(CFLAGS) -c $(INC) $<
