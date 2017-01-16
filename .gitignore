@@ -4,5 +4,5 @@
 *.exe
 *.res
 *.dll
-*.log
+*.log*
 *~
