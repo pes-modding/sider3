@@ -416,6 +416,12 @@ DWORD install_func(LPVOID thread_param) {
         return -1;
     }
 
+    for (list<wstring>::iterator it = _config->_cpk_roots.begin();
+            it != _config->_cpk_roots.end();
+            it++) {
+        log_(L"Using cpk.root: %s\n", it->c_str());
+    }
+
     hook_call_point(_config->_hp_get_buffer_size,
         lcpk_get_buffer_size_cp, 6, 1);
     //hook_call_point(_config->_hp_create_buffer,
