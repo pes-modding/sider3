@@ -63,11 +63,11 @@ HWND BuildWindow(int nCmdShow)
 
     retval = CreateWindowEx(xstyle,
         L"SIDERCLS",      // class name
-        L"Sider", // title for our window (appears in the titlebar)
+        L"Sider 3", // title for our window (appears in the titlebar)
         style,
         CW_USEDEFAULT,  // initial x coordinate
         CW_USEDEFAULT,  // initial y coordinate
-        200, 66,   // width and height of the window
+        210, 70,   // width and height of the window
         NULL,           // no parent window.
         NULL,           // no menu
         NULL,           // no creator
