@@ -43,10 +43,18 @@ struct CPK_INFO {
 struct READ_STRUCT {
     DWORD dw0;
     DWORD cpkInfoTableAddr;
-    DWORD dw1[22];
-    DWORD size;
+    DWORD dw1[14];
+    DWORD offset;
+    DWORD dw2[3];
+    DWORD sizeRead;
+    DWORD dw3[3];
+    DWORD sizeOfBuffer;
     BYTE *buffer;
-    DWORD dw2[0xd0/4];
+    DWORD dw4[0x98/4];
+    DWORD orgOffset;
+    DWORD dw5;
+    DWORD totalSize;
+    DWORD dw6[11];
     char filename[0x80];
 };
 
@@ -789,7 +797,7 @@ DWORD lcpk_after_read(struct READ_STRUCT* rs)
             //Utf8::fUtf8ToUnicode(s, rs->filename);
 
             //log_(L"READ bytes into (%p) from: %s (%d)\n",
-            //        rs->buffer, s, rs->size);
+            //        rs->buffer, s, rs->sizeRead);
 
             wstring *fn = have_live_file(rs->filename);
             if (fn != NULL) {
@@ -808,6 +816,8 @@ DWORD lcpk_after_read(struct READ_STRUCT* rs)
                     log_(L"Found file:: %s\n", fn->c_str());
                     size = GetFileSize(handle,NULL);
                     DWORD bytesRead = 0;
+                    DWORD offset = rs->offset - rs->orgOffset;
+                    SetFilePointer(handle, offset, NULL, FILE_BEGIN);
                     ReadFile(handle, rs->buffer, size, &bytesRead, NULL); 
                     if (bytesRead > 0) {
                         log_(L"Read replacement data (%d bytes). HOORAY!\n", bytesRead);
