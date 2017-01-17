@@ -64,6 +64,29 @@ struct READ_STRUCT {
 static DWORD _lookup_file_org = 0;
 
 bool is_game(false);
+
+// livecpk patterns
+BYTE lcpk_pattern_get_buffer_size[16] = 
+    "\x8b\x8d\xc0\xff\xff\xff"
+    "\x8b\x85\xbc\xff\xff\xff"
+    "\x83\xc4\x0c";
+BYTE lcpk_pattern_create_buffer[15] =
+    "\x89\x46\x38"
+    "\x39\x5e\x38"
+    "\x0f\x84\xee\x00\x00\x00"
+    "\x6a\x01";
+BYTE lcpk_pattern_after_read[18] =
+    "\xc7\x46\x10\x01\x00\x00\x00"
+    "\x83\x7e\x10\x01"
+    "\x0f\x85\xbb\x00\x00\x00";
+BYTE lcpk_pattern_lookup_file[17] =
+    "\xeb\x6c"
+    "\x8d\x85\xac\xfd\xff\xff"
+    "\x50"
+    "\x8d\x85\xb0\xfd\xff\xff"
+    "\x50";
+BYTE lcpk_offs_lookup_file = 5;
+
 bool patched(false);
 bool patched2(false);
 bool patched3(false);
@@ -153,8 +176,9 @@ static void string_strip_quotes(wstring& s)
 class config_t {
 public:
     bool _debug;
-    char *_code_section;
+    bool _livecpk_enabled;
     wstring _section_name;
+    list<wstring> _code_sections;
     list<wstring> _cpk_roots;
     list<wstring> _exe_names;
     bool _free_select_sides;
@@ -170,6 +194,7 @@ public:
     config_t(const wstring& section_name, const wchar_t* config_ini) : 
                  _section_name(section_name),
                  _debug(false),
+                 _livecpk_enabled(false),
                  _free_select_sides(false),
                  _free_first_player(false),
                  _cut_scenes(false),
@@ -180,7 +205,6 @@ public:
                  _hp_after_read(0),
                  _hp_lookup_file(0)
     {
-        _code_section = strdup(".text");
         wchar_t settings[32767];
         RtlZeroMemory(settings, sizeof(settings));
         GetPrivateProfileSection(_section_name.c_str(),
@@ -197,8 +221,7 @@ public:
                 _exe_names.push_back(value);
             }
             else if (wcscmp(L"code.section", key.c_str())==0) {
-                if (_code_section) free(_code_section);
-                _code_section = (char *)Utf8::unicodeToUtf8(value.c_str());
+                _code_sections.push_back(value);
             }
             else if (wcscmp(L"cpk.root", key.c_str())==0) {
                 _cpk_roots.push_back(value);
@@ -221,6 +244,10 @@ public:
 
         _debug = GetPrivateProfileInt(_section_name.c_str(),
             L"debug", _debug,
+            config_ini);
+        
+        _livecpk_enabled = GetPrivateProfileInt(_section_name.c_str(),
+            L"livecpk.enabled", _debug,
             config_ini);
         
         _free_select_sides = GetPrivateProfileInt(_section_name.c_str(),
@@ -254,10 +281,6 @@ public:
             _camera_dynamic_wide_angle_enabled,
             config_ini);
 
-    }
-
-    ~config_t() {
-        if (_code_section) free(_code_section);
     }
 };
 
@@ -412,19 +435,16 @@ BYTE* find_code_frag(BYTE *base, DWORD max_offset, BYTE *frag, size_t frag_len)
 
 }
 
+bool _install_func(IMAGE_SECTION_HEADER *h);
+
 DWORD install_func(LPVOID thread_param) {
     log_(L"DLL attaching to (%s).\n", module_filename);
     log_(L"Mapped into PES.\n");
 
     is_game = true;
 
-    BYTE* base = (BYTE*)GetModuleHandle(NULL);
-    IMAGE_SECTION_HEADER* h;
-    h = GetSectionHeader(_config->_code_section);
-    if (!h) {
-        log_(L"Unable to find code section. Stopping here\n");
-        return -1;
-    }
+    log_(L"debug = %d\n", _config->_debug);
+    log_(L"livecpk.enabled = %d\n", _config->_livecpk_enabled);
 
     for (list<wstring>::iterator it = _config->_cpk_roots.begin();
             it != _config->_cpk_roots.end();
@@ -432,20 +452,94 @@ DWORD install_func(LPVOID thread_param) {
         log_(L"Using cpk.root: %s\n", it->c_str());
     }
 
-    hook_call_point(_config->_hp_get_buffer_size,
-        lcpk_get_buffer_size_cp, 6, 1);
-    //hook_call_point(_config->_hp_create_buffer,
-    //    lcpk_create_buffer_cp, 6, 1);
-    hook_call_point(_config->_hp_after_read,
-        lcpk_after_read_cp, 6, 2);
+    if (_config->_code_sections.size() == 0) {
+        log_(L"No code sections specified in config: nothing to do then.");
+        return 0;
+    }
 
-    _lookup_file_org = get_target_addr(_config->_hp_lookup_file);
-    hook_call_point(_config->_hp_lookup_file,
-        lcpk_lookup_file_cp, 6, 0);
+    list<wstring>::iterator it = _config->_code_sections.begin();
+    for (; it != _config->_code_sections.end(); it++) {
+        char *section_name = (char*)Utf8::unicodeToUtf8(it->c_str());
+        IMAGE_SECTION_HEADER *h = GetSectionHeader(section_name);
+        Utf8::free(section_name);
 
+        if (!h) {
+            log_(L"Unable to find code section: %s. Skipping\n", it->c_str());
+            continue;
+        }
+        if (h->Misc.VirtualSize < 0x1000000) {
+            log_(L"Section too small: %s. Skipping\n", it->c_str());
+            continue;
+        }
+
+        log_(L"Examining code section: %s\n", it->c_str());
+        if (_install_func(h)) {
+            break;
+        }
+    }
+    return 0;
+}
+
+bool _install_func(IMAGE_SECTION_HEADER *h) {
+    BYTE* base = (BYTE*)GetModuleHandle(NULL);
     base += h->VirtualAddress;
+    log_(L"Searching code section at: %08x\n", base);
+    bool result(false);
 
-    log_(L"Starting code section: %08x\n", base);
+    if (_config->_livecpk_enabled) {
+        BYTE *frag[3];
+        frag[0] = lcpk_pattern_get_buffer_size;
+        frag[1] = lcpk_pattern_after_read;
+        frag[2] = lcpk_pattern_lookup_file;
+        size_t frag_len[3];
+        frag_len[0] = sizeof(lcpk_pattern_get_buffer_size)-1;
+        frag_len[1] = sizeof(lcpk_pattern_after_read)-1;
+        frag_len[2] = sizeof(lcpk_pattern_lookup_file)-1;
+        BYTE offs[3];
+        offs[0] = 0;
+        offs[1] = 0;
+        offs[2] = lcpk_offs_lookup_file;
+        DWORD *addrs[3];
+        addrs[0] = &_config->_hp_get_buffer_size;
+        addrs[1] = &_config->_hp_after_read;
+        addrs[2] = &_config->_hp_lookup_file;
+
+        bool all_found(true);
+        for (int j=0; j<3; j++) {
+            BYTE *p = find_code_frag(base, h->Misc.VirtualSize, 
+                frag[j], frag_len[j]);
+            if (!p) {
+                all_found = false;
+                continue;
+            }
+            *(addrs[j]) = (DWORD)p - offs[j];
+        }
+
+        if (all_found) {
+            hook_call_point(_config->_hp_get_buffer_size,
+                lcpk_get_buffer_size_cp, 6, 1);
+            //hook_call_point(_config->_hp_create_buffer,
+            //    lcpk_create_buffer_cp, 6, 1);
+            hook_call_point(_config->_hp_after_read,
+                lcpk_after_read_cp, 6, 2);
+
+            _lookup_file_org = get_target_addr(_config->_hp_lookup_file);
+            hook_call_point(_config->_hp_lookup_file,
+                lcpk_lookup_file_cp, 6, 0);
+
+            result = true;
+        }
+        else {
+            // report matching issues
+            for (int j=0; j<3; j++) {
+                DWORD addr = *(addrs[j]);
+                if (!addr) {
+                    log_(L"Unable to patch: "
+                         L"lcpk(%d) code pattern not found\n", j); 
+                }
+            }
+        }
+    }
 
     DWORD oldProtection;
     DWORD newProtection = PAGE_EXECUTE_READWRITE;
@@ -548,6 +642,7 @@ DWORD install_func(LPVOID thread_param) {
                 VirtualProtect(c, 8, oldProtection, &newProtection);
                 log_(L"Camera slider patched (%d) at offset %08x ( %p )\n", j, c-base, c);
                 cam_places[j] = c;
+                result = true;
             }
             else {
                 log_(L"PROBLEM with Virtual Protect.\n");
@@ -598,6 +693,7 @@ DWORD install_func(LPVOID thread_param) {
                 VirtualProtect(c, 8, oldProtection, &newProtection);
                 log_(L"Dynamic Wide camera patched (%d) at offset %08x ( %p )\n", j, c-base, c);
                 cam_dynamic_wide_places[j] = c;
+                result = true;
             }
             else {
                 log_(L"PROBLEM with Virtual Protect.\n");
@@ -605,7 +701,7 @@ DWORD install_func(LPVOID thread_param) {
         }
     }
 
-    return 0;
+    return result || patched || patched2 || patched3;
 }
 
 wstring* _have_live_file(char *file_name)
@@ -744,7 +840,7 @@ DWORD lcpk_create_buffer(DWORD* file_name_addr, DWORD* buffer)
         DBG {
             wchar_t *s = Utf8::utf8ToUnicode((BYTE*)file_name);
             log_(L"Association: %p <-- %s\n", buffer, s); 
-            HeapFree(GetProcessHeap(), 0, s);
+            Utf8::free(s);
         }
 
         pair<hash_map<DWORD*,string>::iterator,bool> ires =
@@ -799,7 +895,7 @@ DWORD lcpk_after_read(struct READ_STRUCT* rs)
                 wchar_t *s = Utf8::utf8ToUnicode((BYTE*)(rs->filename));
                 log_(L"READ bytes into (%p) from: %s (off:%08x, size:%08x)\n",
                     rs->buffer, s, rs->offset - rs->orgOffset, rs->sizeRead);
-                HeapFree(GetProcessHeap(), 0, s);
+                Utf8::free(s);
             }
 
             wstring *fn = have_live_file(rs->filename);
@@ -937,6 +1033,7 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
             }
 
             if (is_pes(module_filename)) {
+                /*
                 if (CreateThread(NULL, //Choose default security
                         0, //Default stack size
                         (LPTHREAD_START_ROUTINE)&install_func,
@@ -946,6 +1043,8 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
                         &dwThreadId) == NULL) {
                     log_(L"PROBLEM creating thread.\n");
                 }
+                */
+                install_func(NULL);
             }
             else if (!is_sider(module_filename)) {
                 return FALSE;
