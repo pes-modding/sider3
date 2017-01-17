@@ -10,6 +10,8 @@
 #include "sider.h"
 #include "utf8.h"
 
+#define DBG if (_config->_debug)
+
 using namespace std;
 using namespace stdext;
 
@@ -675,9 +677,9 @@ DWORD lcpk_get_buffer_size(char* file_name, DWORD* p_org_size)
 
         if (handle != INVALID_HANDLE_VALUE)
         {
-            log_(L"Found file:: %s\n", fn->c_str());
+            DBG log_(L"Found file:: %s\n", fn->c_str());
             size = GetFileSize(handle,NULL);
-            log_(L"Corrected size: %d --> %d\n", *p_org_size, size);
+            DBG log_(L"Corrected size: %d --> %d\n", *p_org_size, size);
             *p_org_size = size;
             CloseHandle(handle);
         }
@@ -739,10 +741,11 @@ DWORD lcpk_create_buffer(DWORD* file_name_addr, DWORD* buffer)
         // associate buffer address with filename
         string name(file_name);
         
-        wchar_t s[512];
-        memset(s, 0, sizeof(s));
-        Utf8::fUtf8ToUnicode(s, file_name);
-        log_(L"Association: %p <-- %s\n", buffer, s); 
+        DBG {
+            wchar_t *s = Utf8::utf8ToUnicode((BYTE*)file_name);
+            log_(L"Association: %p <-- %s\n", buffer, s); 
+            HeapFree(GetProcessHeap(), 0, s);
+        }
 
         pair<hash_map<DWORD*,string>::iterator,bool> ires =
             _assoc.insert(pair<DWORD*,string>(buffer,name));
@@ -792,12 +795,12 @@ DWORD lcpk_after_read(struct READ_STRUCT* rs)
 {
     if (rs) {
         if (rs->filename) {
-            //wchar_t s[512];
-            //memset(s, 0, sizeof(s));
-            //Utf8::fUtf8ToUnicode(s, rs->filename);
-
-            //log_(L"READ bytes into (%p) from: %s (%d)\n",
-            //        rs->buffer, s, rs->sizeRead);
+            DBG {
+                wchar_t *s = Utf8::utf8ToUnicode((BYTE*)(rs->filename));
+                log_(L"READ bytes into (%p) from: %s (off:%08x, size:%08x)\n",
+                    rs->buffer, s, rs->offset - rs->orgOffset, rs->sizeRead);
+                HeapFree(GetProcessHeap(), 0, s);
+            }
 
             wstring *fn = have_live_file(rs->filename);
             if (fn != NULL) {
@@ -813,21 +816,21 @@ DWORD lcpk_after_read(struct READ_STRUCT* rs)
 
                 if (handle != INVALID_HANDLE_VALUE)
                 {
-                    log_(L"Found file:: %s\n", fn->c_str());
+                    DBG log_(L"Found file:: %s\n", fn->c_str());
                     size = GetFileSize(handle,NULL);
                     DWORD bytesRead = 0;
                     DWORD offset = rs->offset - rs->orgOffset;
                     SetFilePointer(handle, offset, NULL, FILE_BEGIN);
-                    ReadFile(handle, rs->buffer, size, &bytesRead, NULL); 
+                    ReadFile(handle, rs->buffer, rs->sizeOfBuffer, &bytesRead, NULL); 
                     if (bytesRead > 0) {
-                        log_(L"Read replacement data (%d bytes). HOORAY!\n", bytesRead);
+                        DBG log_(L"Read replacement data (%d bytes). HOORAY!\n", bytesRead);
                     }
                     CloseHandle(handle);
                 }
             }
         }
         else {
-            log_(L"rs (buffer: %p), but no filename\n", rs->buffer);
+            DBG log_(L"rs (buffer: %p), but no filename\n", rs->buffer);
         }
     }
     return 0;
