@@ -315,11 +315,14 @@ void read_configuration(config_t*& config)
     }
 }
 
-static bool is_sider(wchar_t* name)
+static bool is_steam(wchar_t* name)
 {
     wchar_t *filename = wcsrchr(name, L'\\');
     if (filename) {
-        if (wcsicmp(filename, L"\\sider.exe") == 0) {
+        if (wcsicmp(filename, L"\\steam.exe") == 0) {
+            return true;
+        }
+        if (wcsicmp(filename, L"\\steamwebhelper.exe") == 0) {
             return true;
         }
     }
@@ -1015,7 +1018,9 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
         case DLL_PROCESS_ATTACH:
             myHDLL = hDLL;
             memset(dll_log, 0, sizeof(dll_log));
-            GetModuleFileName(hDLL, dll_log, MAX_PATH);
+            if (GetModuleFileName(hDLL, dll_log, MAX_PATH)==0) {
+                return TRUE;
+            }
             dot = wcsrchr(dll_log, L'.');
             wcscpy(dot, L".log");
 
@@ -1025,8 +1030,15 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
             wcscpy(dot, L".ini");
 
             memset(module_filename, 0, sizeof(module_filename));
-            GetModuleFileName(NULL, module_filename, MAX_PATH);
+            if (GetModuleFileName(NULL, module_filename, MAX_PATH)==0) {
+                return TRUE;
+            }
             //log_(L"DLL_PROCESS_ATTACH: %s\n", module_filename);
+
+            if (is_steam(module_filename)) {
+                // don't go further, because of crashes
+                return TRUE;
+            }
 
             if (!_config) {
                 read_configuration(_config);
@@ -1045,9 +1057,6 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
                 }
                 */
                 install_func(NULL);
-            }
-            else if (!is_sider(module_filename)) {
-                return FALSE;
             }
 
             break;
