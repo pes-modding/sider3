@@ -1,6 +1,6 @@
-Sider v2.5 for Pro Evolution Soccer 2017
+Sider v3.0 for Pro Evolution Soccer 2017
 ========================================
-Copyright (C) 2017 juce
+Copyright (C) 2017 juce, nesa24
 
 
 This tool allows you to make small tweaks to your PES experience:
@@ -12,6 +12,11 @@ For example: in cups, leagues, Champions League, and so for.
 2. Extend "Custom" camera sliders beyond 10. 
 For "Dynamic Wide" you can enable angle slider.
 
+3. "LiveCPK" feature makes it possible to replace game content
+at run-time with content from files stored on disk, instead of
+having to pack everything into CPK-archives. (This feature
+is similar to Kitserver's AFS2FS and to FileLoader for earler
+versions of PES).
 
 
 HOW TO USE:
@@ -20,17 +25,12 @@ HOW TO USE:
 Run sider.exe, it will open a small window, which you can
 minimize if you want, but do not close it.
 
-Run the game. Make sure you press any keyboard key at least 
-once, for example when the game says "Press Any Key". This
-is VERY IMPORTANT - to have the operating system map sider.dll
-into the running game process.
+Run the game. There is no need for any manual trigger action:
+Sider should automatically attach to the game process.
 
-After that, you can navigate the game with your game controller 
-(or keyboard), whichever way you prefer.
-
-If all worked correctly, then on "Select Sides" screens, 
-you should be able to move the controllers left and right 
-without any restrictions.
+If you don't see the effects of Sider in the game, check the
+sider.log file (in the same folder where sider.exe is) - it should
+contain some helpeful information on what went wrong.
 
 
 SETTINGS (SIDER.INI)
@@ -79,4 +79,33 @@ camea.dynamic-wide.angle.enabled = 1
 
 - This enabled "Angle" slider for "Dynamic Wide" camera.
 The feature is somewhat experimental. (0 - disables it)
+
+
+livecpk.enabled = 1
+
+- Turns on the LiveCPK functionality of Sider. See below for a more
+detailed explanation in cpk.root option section.
+
+
+debug = 0
+
+- Setting this to 1 will make Sider output some additional information
+into the log file (sider.log). This is useful primarily for troubleshooting.
+Extra logging may slow the game down, so normally you would want to keep
+this setting set to 0. (Defaults to 0: no extra output)
+
+
+cpk.root = "c:\cpk-roots\balls-root"
+cpk.root = "c:\cpk-roots\kits-root"
+
+- Specifies root folder (or folders), where the game files are stored that
+will be used for content replacing at run-time. It works like this:
+For example, the game wants to load a file that is stored in some CPK, with 
+the relative path of "common/render/thumbnail/ball/ball_001.dds". Sider
+will intercept that action and check if one of the root folders have this
+file. If so, Sider will make the game read the content from that file instead
+of using game's original content. If multiple roots are specified, then
+they are checked in order that they are listed in sider.ini. As soon as there
+is a filename match, the lookup stops. (So, higher root will win, if both of
+them have the same file).
 
