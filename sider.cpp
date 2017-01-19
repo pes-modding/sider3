@@ -224,6 +224,9 @@ public:
                 _code_sections.push_back(value);
             }
             else if (wcscmp(L"cpk.root", key.c_str())==0) {
+                if (value[value.size()-1] != L'\\') {
+                    value = value + L'\\';
+                }
                 _cpk_roots.push_back(value);
             }
             else if (wcscmp(L"hook.get-buffer-size", key.c_str())==0) {
@@ -719,7 +722,8 @@ wstring* _have_live_file(char *file_name)
             it++) {
         memset(fn, 0, sizeof(fn));
         wcscpy(fn, it->c_str());
-        wcscat(fn, unicode_filename);
+        wchar_t *p = (unicode_filename[0] == L'\\') ? unicode_filename + 1 : unicode_filename;
+        wcscat(fn, p);
 
         DWORD size = 0;
         HANDLE handle;
