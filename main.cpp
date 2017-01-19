@@ -46,6 +46,13 @@ bool InitApp(HINSTANCE hInstance, LPSTR lpCmdLine)
     wcx.lpszClassName = L"SIDERCLS";
     wcx.hIconSm = LoadIcon(hInstance, L"si");
 
+    // Detect already running sider
+    HWND hwndPrev;
+    if ((hwndPrev = FindWindow(wcx.lpszClassName, NULL)) != NULL) {
+        SetForegroundWindow(hwndPrev);
+        return false;
+    }
+
     // Register the class with Windows
     if(!RegisterClassEx(&wcx))
         return false;
