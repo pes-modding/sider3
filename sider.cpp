@@ -301,6 +301,18 @@ __declspec(dllexport) void log_(const wchar_t *format, ...)
     }
 }
 
+__declspec(dllexport) void start_log_(const wchar_t *format, ...)
+{
+    FILE *file = _wfopen(dll_log, L"wt");
+    if (file) {
+        va_list params;
+        va_start(params, format);
+        vfwprintf(file, format, params);
+        va_end(params);
+        fclose(file);
+    }
+}
+
 void read_configuration(config_t*& config)
 {
     wchar_t names[1024];
@@ -1060,6 +1072,9 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
                     log_(L"PROBLEM creating thread.\n");
                 }
                 */
+                wstring version;
+                get_module_version(hDLL, version);
+                log_(L"Sider DLL: version %s\n", version.c_str());
                 install_func(NULL);
             }
 
@@ -1174,7 +1189,7 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
  
     return TRUE;
 }
- 
+
 //extern "C" __declspec(dllexport) int meconnect(
 LRESULT CALLBACK meconnect(int code, WPARAM wParam, LPARAM lParam) 
 {
@@ -1187,7 +1202,7 @@ LRESULT CALLBACK meconnect(int code, WPARAM wParam, LPARAM lParam)
 void setHook()
 {
     handle = SetWindowsHookEx(WH_CBT, meconnect, myHDLL, 0);
-    log_(L"---\n");
+    log_(L"======================\n");
     log_(L"handle = %p\n", handle);
 }
 

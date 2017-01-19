@@ -18,7 +18,7 @@ ZLIBDLL=soft\zlib123-dll\zlib1.dll
 CFLAGS=/nologo /Od /EHsc /wd4731 $(EXTRA_CFLAGS)
 LFLAGS=/NOLOGO
 #LIBS=user32.lib gdi32.lib advapi32.lib comctl32.lib shell32.lib shlwapi.lib
-LIBS=user32.lib gdi32.lib comctl32.lib
+LIBS=user32.lib gdi32.lib comctl32.lib version.lib
 LIBSDLL=pngdib.obj libpng.a zdll.lib $(LIBS)
 
 
@@ -30,10 +30,11 @@ sider_main.res: sider_main.rc sider.ico
 	$(RC) -r -fo sider_main.res sider_main.rc
 
 imageutil.obj: imageutil.cpp
+version.obj: version.cpp
 
 sider.obj: sider.cpp
-sider.dll: sider.obj imageutil.obj sider.res
-	$(LINK) $(LFLAGS) /out:sider.dll /DLL sider.obj imageutil.obj sider.res $(LIBS)
+sider.dll: sider.obj imageutil.obj version.obj sider.res
+	$(LINK) $(LFLAGS) /out:sider.dll /DLL sider.obj imageutil.obj version.obj sider.res $(LIBS)
 
 sider.exe: main.obj sider.dll sider_main.res
 	$(LINK) $(LFLAGS) /out:sider.exe main.obj sider_main.res $(LIBS) sider.lib
