@@ -1,9 +1,11 @@
 #define UNICODE
 
 #include <windows.h>
-#include "sider.h"
+#include <string>
 
-void get_module_version(HMODULE hmodule, wstring& version)
+using namespace std;
+
+__declspec(dllexport) void get_module_version(HMODULE hmodule, wstring& version)
 {
     wchar_t full_path[512];
     memset(full_path, 0, sizeof(full_path));
