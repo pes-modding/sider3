@@ -315,6 +315,13 @@ __declspec(dllexport) void start_log_(const wchar_t *format, ...)
 
 void read_configuration(config_t*& config)
 {
+    // prep ini filename
+    wchar_t *dot;
+    memset(dll_ini, 0, sizeof(dll_ini));
+    wcscpy(dll_ini, dll_log);
+    dot = wcsrchr(dll_ini, L'.');
+    wcscpy(dot, L".ini");
+
     wchar_t names[1024];
     size_t names_len = sizeof(names)/sizeof(wchar_t);
     GetPrivateProfileSectionNames(names, names_len, dll_ini);
@@ -330,10 +337,13 @@ void read_configuration(config_t*& config)
     }
 }
 
-static bool is_steam(wchar_t* name)
+static bool skip_process(wchar_t* name)
 {
     wchar_t *filename = wcsrchr(name, L'\\');
     if (filename) {
+        if (wcsicmp(filename, L"\\explorer.exe") == 0) {
+            return true;
+        }
         if (wcsicmp(filename, L"\\steam.exe") == 0) {
             return true;
         }
@@ -344,20 +354,31 @@ static bool is_steam(wchar_t* name)
     return false;
 }
 
+static bool is_sider(wchar_t* name)
+{
+    wchar_t *filename = wcsrchr(name, L'\\');
+    if (filename) {
+        if (wcsicmp(filename, L"\\sider.exe") == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+struct WSTR_INFO *get_wi() {
+    return (struct WSTR_INFO*)_shared_data;
+}
+
 static bool is_pes(wchar_t* name)
 {
-    if (_config) {
-        list<wstring>::iterator it;
-        for (it = _config->_exe_names.begin(); 
-                it != _config->_exe_names.end();
-                it++) {
-            wchar_t *filename = wcsrchr(name, L'\\');
-            if (filename) {
-                if (wcsicmp(filename, it->c_str()) == 0) {
-                    log_(L"===\n");
-                    log_(L"Filename match: %s\n", it->c_str());
-                    return true;
-                }
+    struct WSTR_INFO *wi = get_wi();
+    for (size_t i=0; i<wi->count; i++) {
+        wchar_t *filename = wcsrchr(name, L'\\');
+        if (filename) {
+            if (wcsicmp(filename, wi->s[i]) == 0) {
+                log_(L"===\n");
+                log_(L"Filename match: %s\n", wi->s[i]);
+                return true;
             }
         }
     }
@@ -1033,51 +1054,61 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
     switch(Reason) {
         case DLL_PROCESS_ATTACH:
             myHDLL = hDLL;
+            memset(module_filename, 0, sizeof(module_filename));
+            if (GetModuleFileName(NULL, module_filename, MAX_PATH)==0) {
+                return FALSE;
+            }
+            //log_(L"DLL_PROCESS_ATTACH: %s\n", module_filename);
+
+            if (skip_process(module_filename)) {
+                return FALSE;
+            }
+
+            // prep log filename
             memset(dll_log, 0, sizeof(dll_log));
             if (GetModuleFileName(hDLL, dll_log, MAX_PATH)==0) {
-                return TRUE;
+                return FALSE;
             }
             dot = wcsrchr(dll_log, L'.');
             wcscpy(dot, L".log");
 
-            memset(dll_ini, 0, sizeof(dll_ini));
-            wcscpy(dll_ini, dll_log);
-            dot = wcsrchr(dll_ini, L'.');
-            wcscpy(dot, L".ini");
-
-            memset(module_filename, 0, sizeof(module_filename));
-            if (GetModuleFileName(NULL, module_filename, MAX_PATH)==0) {
-                return TRUE;
-            }
-            //log_(L"DLL_PROCESS_ATTACH: %s\n", module_filename);
-
-            if (is_steam(module_filename)) {
-                // don't go further, because of crashes
-                return TRUE;
-            }
-
-            if (!_config) {
-                read_configuration(_config);
-            }
-
             if (is_pes(module_filename)) {
-                /*
-                if (CreateThread(NULL, //Choose default security
-                        0, //Default stack size
-                        (LPTHREAD_START_ROUTINE)&install_func,
-                        //Routine to execute
-                        NULL, //(LPVOID) &i, //Thread parameter
-                        0, //Immediately run the thread
-                        &dwThreadId) == NULL) {
-                    log_(L"PROBLEM creating thread.\n");
+                if (!_config) {
+                    read_configuration(_config);
                 }
-                */
+
                 wstring version;
                 get_module_version(hDLL, version);
                 log_(L"Sider DLL: version %s\n", version.c_str());
                 install_func(NULL);
+                return TRUE;
             }
 
+            if (is_sider(module_filename)) {
+                if (!_config) {
+                    read_configuration(_config);
+                }
+
+                // initialize shared memory
+                // this info will be later used by sider.dll when
+                // it gets mapped into processes
+                struct WSTR_INFO *wi = get_wi();
+                wi->count = _config->_exe_names.size();
+                wchar_t *p = (wchar_t*)(
+                    (BYTE*)wi + sizeof(wi->count) + sizeof(wchar_t*)*wi->count);
+                size_t i = 0;
+                for (list<wstring>::iterator it = _config->_exe_names.begin();
+                        it != _config->_exe_names.end();
+                        it++, i++) {
+                    size_t len = it->size();
+                    wi->s[i] = p;
+                    wcscpy(p, it->c_str());
+                    p = p + len + 1;
+                }
+                return TRUE;
+            }
+
+            return FALSE;
             break;
 
         case DLL_PROCESS_DETACH:
@@ -1202,7 +1233,7 @@ LRESULT CALLBACK meconnect(int code, WPARAM wParam, LPARAM lParam)
 void setHook()
 {
     handle = SetWindowsHookEx(WH_CBT, meconnect, myHDLL, 0);
-    log_(L"======================\n");
+    log_(L"--------------------\n");
     log_(L"handle = %p\n", handle);
 }
 
