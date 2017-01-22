@@ -32,8 +32,9 @@ hash_map<DWORD*,string> _assoc;
 hash_map<string,wstring*> _lookup_cache;
 
 wchar_t module_filename[MAX_PATH];
-wchar_t dll_log[MAX_PATH];
-wchar_t dll_ini[MAX_PATH];
+wchar_t dll_log[MAX_PATH] = L"\0";
+wchar_t dll_ini[MAX_PATH] = L"\0";
+wchar_t sider_dir[MAX_PATH] = L"\0";
 
 struct CPK_INFO {
     DWORD dw0[8];
@@ -227,6 +228,10 @@ public:
                 if (value[value.size()-1] != L'\\') {
                     value = value + L'\\';
                 }
+                // handle relative roots
+                if (value[0]==L'.') {
+                    value = sider_dir + value;
+                }
                 _cpk_roots.push_back(value);
             }
             else if (wcscmp(L"hook.get-buffer-size", key.c_str())==0) {
@@ -289,6 +294,32 @@ public:
 
 config_t* _config;
 
+bool init_paths() {
+    wchar_t *p;
+
+    // prep log filename
+    memset(dll_log, 0, sizeof(dll_log));
+    if (GetModuleFileName(myHDLL, dll_log, MAX_PATH)==0) {
+        return FALSE;
+    }
+    p = wcsrchr(dll_log, L'.');
+    wcscpy(p, L".log");
+
+    // prep ini filename
+    memset(dll_ini, 0, sizeof(dll_ini));
+    wcscpy(dll_ini, dll_log);
+    p = wcsrchr(dll_ini, L'.');
+    wcscpy(p, L".ini");
+
+    // prep sider dir
+    memset(sider_dir, 0, sizeof(sider_dir));
+    wcscpy(sider_dir, dll_log);
+    p = wcsrchr(sider_dir, L'\\');
+    *(p+1) = L'\0';
+
+    return true;
+}
+
 __declspec(dllexport) void log_(const wchar_t *format, ...)
 {
     FILE *file = _wfopen(dll_log, L"a+");
@@ -315,13 +346,6 @@ __declspec(dllexport) void start_log_(const wchar_t *format, ...)
 
 void read_configuration(config_t*& config)
 {
-    // prep ini filename
-    wchar_t *dot;
-    memset(dll_ini, 0, sizeof(dll_ini));
-    wcscpy(dll_ini, dll_log);
-    dot = wcsrchr(dll_ini, L'.');
-    wcscpy(dot, L".ini");
-
     wchar_t names[1024];
     size_t names_len = sizeof(names)/sizeof(wchar_t);
     GetPrivateProfileSectionNames(names, names_len, dll_ini);
@@ -369,15 +393,14 @@ struct WSTR_INFO *get_wi() {
     return (struct WSTR_INFO*)_shared_data;
 }
 
-static bool is_pes(wchar_t* name)
+static bool is_pes(wchar_t* name, wchar_t** match)
 {
     struct WSTR_INFO *wi = get_wi();
     for (size_t i=0; i<wi->count; i++) {
         wchar_t *filename = wcsrchr(name, L'\\');
         if (filename) {
             if (wcsicmp(filename, wi->s[i]) == 0) {
-                log_(L"===\n");
-                log_(L"Filename match: %s\n", wi->s[i]);
+                *match = wi->s[i];
                 return true;
             }
         }
@@ -1049,7 +1072,7 @@ void lcpk_lookup_file_cp()
 
 INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved) 
 {
-    wchar_t *dot;
+    wchar_t *match = NULL;
 
     switch(Reason) {
         case DLL_PROCESS_ATTACH:
@@ -1064,27 +1087,23 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
                 return FALSE;
             }
 
-            // prep log filename
-            memset(dll_log, 0, sizeof(dll_log));
-            if (GetModuleFileName(hDLL, dll_log, MAX_PATH)==0) {
-                return FALSE;
-            }
-            dot = wcsrchr(dll_log, L'.');
-            wcscpy(dot, L".log");
-
-            if (is_pes(module_filename)) {
+            if (is_pes(module_filename, &match)) {
+                if (!init_paths()) return FALSE;
                 if (!_config) {
                     read_configuration(_config);
                 }
 
                 wstring version;
                 get_module_version(hDLL, version);
+                log_(L"===\n");
                 log_(L"Sider DLL: version %s\n", version.c_str());
+                log_(L"Filename match: %s\n", match);
                 install_func(NULL);
                 return TRUE;
             }
 
             if (is_sider(module_filename)) {
+                if (!init_paths()) return FALSE;
                 if (!_config) {
                     read_configuration(_config);
                 }

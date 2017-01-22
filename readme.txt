@@ -3,6 +3,7 @@ Sider v3.0 for Pro Evolution Soccer 2017
 Copyright (C) 2017 juce, nesa24
 
 
+
 This tool allows you to make small tweaks to your PES experience:
 
 1. You can freely select sides in competition
@@ -97,6 +98,7 @@ this setting set to 0. (Defaults to 0: no extra output)
 
 cpk.root = "c:\cpk-roots\balls-root"
 cpk.root = "c:\cpk-roots\kits-root"
+cpk.root = ".\another-root\stadiums"
 
 - Specifies root folder (or folders), where the game files are stored that
 will be used for content replacing at run-time. It works like this:
@@ -107,5 +109,14 @@ file. If so, Sider will make the game read the content from that file instead
 of using game's original content. If multiple roots are specified, then
 they are checked in order that they are listed in sider.ini. As soon as there
 is a filename match, the lookup stops. (So, higher root will win, if both of
-them have the same file).
+them have the same file). You can use either absolute paths or relative.
+Relative paths will be calculated relative to the folder where sider.exe is
+located.
+
+
+CREDITS:
+--------
+Game research by nesa24 and juce
+Sider is written by juce and nesa24
+Test content: EPL High-Visibility ball: by -cRoNoS-
 
