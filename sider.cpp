@@ -22,6 +22,7 @@ void lcpk_get_buffer_size_cp();
 void lcpk_create_buffer_cp();
 void lcpk_after_read_cp();
 void lcpk_lookup_file_cp();
+void lcpk_get_file_info_cp();
 
 static DWORD dwThreadId;
 static DWORD hookingThreadId = 0;
@@ -32,15 +33,23 @@ hash_map<DWORD*,string> _assoc;
 hash_map<string,wstring*> _lookup_cache;
 
 wchar_t module_filename[MAX_PATH];
-wchar_t dll_log[MAX_PATH] = L"\0";
-wchar_t dll_ini[MAX_PATH] = L"\0";
-wchar_t sider_dir[MAX_PATH] = L"\0";
+wchar_t dll_log[MAX_PATH];
+wchar_t dll_ini[MAX_PATH];
+wchar_t sider_dir[MAX_PATH];
 
 struct CPK_INFO {
     DWORD dw0[8];
     DWORD dw1;
     char *cpk_filename;
     DWORD dw2[6];
+};
+
+struct FILE_INFO {
+    DWORD size;
+    DWORD size2;
+    DWORD offset;
+    DWORD zero;
+    char filename[0x200];
 };
 
 struct READ_STRUCT {
@@ -87,6 +96,11 @@ BYTE lcpk_pattern_lookup_file[17] =
     "\x8d\x85\xb0\xfd\xff\xff"
     "\x50";
 BYTE lcpk_offs_lookup_file = 5;
+
+BYTE lcpk_pattern_get_file_info[12] = 
+    "\x83\x67\x14\x00"
+    "\x83\x67\x1c\x00"
+    "\x89\x4f\x04";
 
 bool patched(false);
 bool patched2(false);
@@ -191,6 +205,7 @@ public:
     DWORD _hp_create_buffer;
     DWORD _hp_after_read;
     DWORD _hp_lookup_file;
+    DWORD _hp_get_file_info;
 
     config_t(const wstring& section_name, const wchar_t* config_ini) : 
                  _section_name(section_name),
@@ -204,7 +219,8 @@ public:
                  _hp_get_buffer_size(0),
                  _hp_create_buffer(0),
                  _hp_after_read(0),
-                 _hp_lookup_file(0)
+                 _hp_lookup_file(0),
+                 _hp_get_file_info(0)
     {
         wchar_t settings[32767];
         RtlZeroMemory(settings, sizeof(settings));
@@ -226,11 +242,15 @@ public:
             }
             else if (wcscmp(L"cpk.root", key.c_str())==0) {
                 if (value[value.size()-1] != L'\\') {
-                    value = value + L'\\';
+                    value += L'\\';
                 }
                 // handle relative roots
                 if (value[0]==L'.') {
-                    value = sider_dir + value;
+                    wstring rel(value);
+                    log_(L"rel.size() = %d\n", rel.size());
+                    value = sider_dir;
+                    value += rel;
+                    log_(L"value.size() = %d\n", value.size());
                 }
                 _cpk_roots.push_back(value);
             }
@@ -530,7 +550,7 @@ DWORD install_func(LPVOID thread_param) {
             continue;
         }
         if (h->Misc.VirtualSize < 0x1000000) {
-            log_(L"Section too small: %s. Skipping\n", it->c_str());
+            log_(L"Section too small: %s (%08x). Skipping\n", it->c_str(), h->Misc.VirtualSize);
             continue;
         }
 
@@ -550,11 +570,11 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
 
     if (_config->_livecpk_enabled) {
         BYTE *frag[3];
-        frag[0] = lcpk_pattern_get_buffer_size;
+        frag[0] = lcpk_pattern_get_file_info;
         frag[1] = lcpk_pattern_after_read;
         frag[2] = lcpk_pattern_lookup_file;
         size_t frag_len[3];
-        frag_len[0] = sizeof(lcpk_pattern_get_buffer_size)-1;
+        frag_len[0] = sizeof(lcpk_pattern_get_file_info)-1;
         frag_len[1] = sizeof(lcpk_pattern_after_read)-1;
         frag_len[2] = sizeof(lcpk_pattern_lookup_file)-1;
         BYTE offs[3];
@@ -562,7 +582,7 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
         offs[1] = 0;
         offs[2] = lcpk_offs_lookup_file;
         DWORD *addrs[3];
-        addrs[0] = &_config->_hp_get_buffer_size;
+        addrs[0] = &_config->_hp_get_file_info;
         addrs[1] = &_config->_hp_after_read;
         addrs[2] = &_config->_hp_lookup_file;
 
@@ -578,8 +598,8 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
         }
 
         if (all_found) {
-            hook_call_point(_config->_hp_get_buffer_size,
-                lcpk_get_buffer_size_cp, 6, 1);
+            hook_call_point(_config->_hp_get_file_info,
+                lcpk_get_file_info_cp, 6, 3);
             //hook_call_point(_config->_hp_create_buffer,
             //    lcpk_create_buffer_cp, 6, 1);
             hook_call_point(_config->_hp_after_read,
@@ -820,6 +840,75 @@ wstring* have_live_file(char *file_name)
     }
 }
 
+DWORD lcpk_get_file_info(struct FILE_INFO* file_info)
+{
+    char *filename = file_info->filename;
+    size_t len = strlen(filename);
+    char *replacement = filename + len + 1;
+    filename = (replacement[0]!='\0') ? replacement : filename;
+
+    wstring *fn = have_live_file(filename);
+    if (fn != NULL) {
+        DWORD size = 0;
+        HANDLE handle;
+        handle = CreateFileW(fn->c_str(),         // file to open
+                           GENERIC_READ,          // open for reading
+                           FILE_SHARE_READ,       // share for reading
+                           NULL,                  // default security
+                           OPEN_EXISTING,         // existing file only
+                           FILE_ATTRIBUTE_NORMAL, // normal file
+                           NULL);                 // no attr. template
+
+        if (handle != INVALID_HANDLE_VALUE)
+        {
+            DBG log_(L"Found file:: %s\n", fn->c_str());
+            size = GetFileSize(handle,NULL);
+            DBG log_(L"Corrected size: %d --> %d\n", file_info->size, size);
+
+            file_info->offset = 0;
+            file_info->size = size;
+            file_info->size2 = size;
+
+            CloseHandle(handle);
+        }
+    }
+    return 0;
+}
+
+void lcpk_get_file_info_cp()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        pushfd 
+        push ebp
+        push eax
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        mov eax,ebp
+        sub eax,0x21c
+        push eax  // addr of file_info struct on stack
+        call lcpk_get_file_info
+        add esp,0x04     // pop parameters
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop eax
+        pop ebp
+        popfd
+        and dword ptr ds:[edi+0x14],0  // execute replaced code
+        and dword ptr ds:[edi+0x1c],0
+        retn
+    }
+}
+
+
 DWORD lcpk_get_buffer_size(char* file_name, DWORD* p_org_size)
 {
     wstring *fn = have_live_file(file_name);
@@ -1027,13 +1116,23 @@ void lcpk_after_read_cp()
 
 DWORD lcpk_lookup_file(char *filename, struct CPK_INFO* cpk_info)
 {
+    char tmp[128];
     if (cpk_info && cpk_info->cpk_filename) {
         if (memcmp(
             //cpk_info->cpk_filename, ".\\Data\\dt00_win.cpk")==0) {
-            cpk_info->cpk_filename + 7, "dt00_win", 8)==0) {
+            cpk_info->cpk_filename + 7, "dt70_win", 8)==0) {
             if (have_live_file(filename) != NULL) {
                 // replace with a known original file
-                strcpy(filename, "\\common\\etc\\TeamColor.bin");
+                strncpy(tmp, filename, sizeof(tmp));
+                //char *ext = filename + strlen(filename) - 4;
+                //if (stricmp(ext, ".usm")==0) {
+                //    strcpy(filename, "\\movie\\WEPES_CI.usm");
+                //} else {
+                    //strcpy(filename, "\\common\\etc\\TeamColor.bin");
+                    strcpy(filename, "\\movie\\acl_a.usm");
+                //}
+                // keep the original name
+                strcpy(filename + strlen(filename) + 1, tmp);
             }
         }
     }
