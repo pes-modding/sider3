@@ -1,4 +1,4 @@
-Sider v3.0 for Pro Evolution Soccer 2017
+Sider v3.1 for Pro Evolution Soccer 2017
 ========================================
 Copyright (C) 2017 juce, nesa24
 
