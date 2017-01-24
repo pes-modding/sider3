@@ -23,6 +23,14 @@ void lcpk_create_buffer_cp();
 void lcpk_after_read_cp();
 void lcpk_lookup_file_cp();
 void lcpk_get_file_info_cp();
+void lcpk_before_read_cp();
+
+BOOL WINAPI lcpk_at_read_file(
+  _In_        HANDLE       hFile,
+  _Out_       LPVOID       lpBuffer,
+  _In_        DWORD        nNumberOfBytesToRead,
+  _Out_opt_   LPDWORD      lpNumberOfBytesRead,
+  _Inout_opt_ LPOVERLAPPED lpOverlapped);
 
 static DWORD dwThreadId;
 static DWORD hookingThreadId = 0;
@@ -31,6 +39,7 @@ static HHOOK handle;
 
 hash_map<DWORD*,string> _assoc;
 hash_map<string,wstring*> _lookup_cache;
+hash_map<BYTE*,HANDLE> _my_reads;
 
 wchar_t module_filename[MAX_PATH];
 wchar_t dll_log[MAX_PATH];
@@ -52,26 +61,48 @@ struct FILE_INFO {
     char filename[0x200];
 };
 
+struct FILE_HANDLE_INFO {
+    DWORD handle;
+    DWORD zero1;
+    DWORD size;
+    DWORD zero2;
+    DWORD currentOffset;
+    DWORD zero3;
+    DWORD padding[4];
+};
+
+hash_map<HANDLE,FILE_HANDLE_INFO*> _my_handles;
+
 struct READ_STRUCT {
     DWORD dw0;
-    DWORD cpkInfoTableAddr;
-    DWORD dw1[14];
+    FILE_HANDLE_INFO *fileHandleInfo;
+    DWORD dw1[8];
+    DWORD cpkFileSize;
+    DWORD dw2[5];
     DWORD offset;
-    DWORD dw2[3];
-    DWORD sizeRead;
     DWORD dw3[3];
-    DWORD sizeOfBuffer;
+    DWORD sizeRead;
+    DWORD bufferOffset;
+    DWORD bufferOffset2;
+    DWORD dw4;
+    DWORD size;
     BYTE *buffer;
-    DWORD dw4[0x98/4];
+    BYTE *buffer2;
+    DWORD dw5[0x94/4];
     DWORD orgOffset;
-    DWORD dw5;
+    DWORD dw6;
     DWORD totalSize;
-    DWORD dw6[11];
+    DWORD dw7;
+    FILE_HANDLE_INFO *fileHandleInfo2;
+    DWORD dw8[9];
     char filename[0x80];
 };
 
 // original call destination of "lookup_file"
 static DWORD _lookup_file_org = 0;
+
+// original call destination of "before_read"
+static DWORD _before_read_org = 0;
 
 bool is_game(false);
 
@@ -95,12 +126,28 @@ BYTE lcpk_pattern_lookup_file[17] =
     "\x50"
     "\x8d\x85\xb0\xfd\xff\xff"
     "\x50";
-BYTE lcpk_offs_lookup_file = 5;
+int lcpk_offs_lookup_file = -5;
 
 BYTE lcpk_pattern_get_file_info[12] = 
     "\x83\x67\x14\x00"
     "\x83\x67\x1c\x00"
     "\x89\x4f\x04";
+
+BYTE lcpk_pattern_before_read[10] =
+    "\x89\x46\x18"
+    "\xc6\x46\x6c\x01"
+    "\x31\xc0";
+int lcpk_offs_before_read = -12;
+
+BYTE lcpk_pattern_at_read_file[14] =
+    "\x56"
+    "\x8d\x45\x08"
+    "\x50"
+    "\x53"
+    "\xff\x75\x1c"
+    "\xff\x37"
+    "\xff\x15";
+int lcpk_offs_at_read_file = 11;
 
 bool patched(false);
 bool patched2(false);
@@ -206,6 +253,8 @@ public:
     DWORD _hp_after_read;
     DWORD _hp_lookup_file;
     DWORD _hp_get_file_info;
+    DWORD _hp_before_read;
+    DWORD _hp_at_read_file;
 
     config_t(const wstring& section_name, const wchar_t* config_ini) : 
                  _section_name(section_name),
@@ -220,7 +269,9 @@ public:
                  _hp_create_buffer(0),
                  _hp_after_read(0),
                  _hp_lookup_file(0),
-                 _hp_get_file_info(0)
+                 _hp_get_file_info(0),
+                 _hp_before_read(0),
+                 _hp_at_read_file(0)
     {
         wchar_t settings[32767];
         RtlZeroMemory(settings, sizeof(settings));
@@ -569,32 +620,36 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
     bool result(false);
 
     if (_config->_livecpk_enabled) {
-        BYTE *frag[3];
+        BYTE *frag[4];
         frag[0] = lcpk_pattern_get_file_info;
-        frag[1] = lcpk_pattern_after_read;
+        frag[1] = lcpk_pattern_at_read_file;
         frag[2] = lcpk_pattern_lookup_file;
-        size_t frag_len[3];
+        frag[3] = lcpk_pattern_before_read;
+        size_t frag_len[4];
         frag_len[0] = sizeof(lcpk_pattern_get_file_info)-1;
-        frag_len[1] = sizeof(lcpk_pattern_after_read)-1;
+        frag_len[1] = sizeof(lcpk_pattern_at_read_file)-1;
         frag_len[2] = sizeof(lcpk_pattern_lookup_file)-1;
-        BYTE offs[3];
+        frag_len[3] = sizeof(lcpk_pattern_before_read)-1;
+        int offs[4];
         offs[0] = 0;
-        offs[1] = 0;
+        offs[1] = lcpk_offs_at_read_file;
         offs[2] = lcpk_offs_lookup_file;
-        DWORD *addrs[3];
+        offs[3] = lcpk_offs_before_read;
+        DWORD *addrs[4];
         addrs[0] = &_config->_hp_get_file_info;
-        addrs[1] = &_config->_hp_after_read;
+        addrs[1] = &_config->_hp_at_read_file;
         addrs[2] = &_config->_hp_lookup_file;
+        addrs[3] = &_config->_hp_before_read;
 
         bool all_found(true);
-        for (int j=0; j<3; j++) {
+        for (int j=0; j<4; j++) {
             BYTE *p = find_code_frag(base, h->Misc.VirtualSize, 
                 frag[j], frag_len[j]);
             if (!p) {
                 all_found = false;
                 continue;
             }
-            *(addrs[j]) = (DWORD)p - offs[j];
+            *(addrs[j]) = (DWORD)p + offs[j];
         }
 
         if (all_found) {
@@ -602,12 +657,16 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
                 lcpk_get_file_info_cp, 6, 3);
             //hook_call_point(_config->_hp_create_buffer,
             //    lcpk_create_buffer_cp, 6, 1);
-            hook_call_point(_config->_hp_after_read,
-                lcpk_after_read_cp, 6, 2);
+            hook_call_point(_config->_hp_at_read_file,
+                lcpk_at_read_file, 0, 1);
 
             _lookup_file_org = get_target_addr(_config->_hp_lookup_file);
             hook_call_point(_config->_hp_lookup_file,
                 lcpk_lookup_file_cp, 6, 0);
+
+            _before_read_org = get_target_addr(_config->_hp_before_read);
+            hook_call_point(_config->_hp_before_read,
+                lcpk_before_read_cp, 6, 0);
 
             result = true;
         }
@@ -908,6 +967,38 @@ void lcpk_get_file_info_cp()
     }
 }
 
+BOOL WINAPI lcpk_at_read_file(
+  _In_        HANDLE       hFile,
+  _Out_       LPVOID       lpBuffer,
+  _In_        DWORD        nNumberOfBytesToRead,
+  _Out_opt_   LPDWORD      lpNumberOfBytesRead,
+  _Inout_opt_ LPOVERLAPPED lpOverlapped) 
+{
+    bool switching(false);
+    HANDLE org_handle;
+    BYTE *buffer = (BYTE*)lpBuffer;
+    hash_map<BYTE*,HANDLE>::iterator it;
+    it = _my_reads.find(buffer);
+    if (it != _my_reads.end()) {
+        // switch handle
+        log_(L"Switching handle: %08x --> %08x\n", hFile, it->second);
+        org_handle = hFile;
+        hFile = it->second;
+        switching = true;
+    }
+
+    log_(L"READ FILE: into %p (num bytes: %08x)\n", lpBuffer, nNumberOfBytesToRead);
+    DWORD result = ReadFile(hFile, lpBuffer, nNumberOfBytesToRead,
+        lpNumberOfBytesRead, lpOverlapped);
+
+    if (switching) {
+        // emulate read
+        //SetFilePointer(org_handle, *lpNumberOfBytesRead, NULL, FILE_CURRENT); 
+        CloseHandle(it->first);
+        _my_reads.erase(it);
+    }
+    return result;
+}
 
 DWORD lcpk_get_buffer_size(char* file_name, DWORD* p_org_size)
 {
@@ -1041,6 +1132,38 @@ void lcpk_create_buffer_cp()
 
 DWORD lcpk_after_read(struct READ_STRUCT* rs)
 {
+    /*
+    if (rs && rs->fileHandleInfo) {
+        if (rs->filename) {
+            DBG {
+                wchar_t *s = Utf8::utf8ToUnicode((BYTE*)(rs->filename));
+                log_(L"READ bytes into (%p) from: %s (off:%08x, size:%08x)\n",
+                    rs->buffer, s, rs->offset - rs->orgOffset, rs->sizeRead);
+                Utf8::free(s);
+            }
+
+            FILE_HANDLE_INFO *fhi = rs->fileHandleInfo;
+            if (fhi && fhi->handle) {
+                hash_map<HANDLE,FILE_HANDLE_INFO*>::iterator it;
+                it = _my_handles.find((HANDLE)fhi->handle);
+                if (it != _my_handles.end()) {
+                    // restore
+                    //memcpy(fhi, it->second, sizeof(*fhi));
+                    fhi->handle = it->second->handle;
+                    fhi->size = it->second->size;
+
+                    rs->cpkFileSize = fhi->size;
+                    fhi->currentOffset += rs->sizeRead;
+
+                    CloseHandle(it->first);
+                    log_(L"Closed my handle: %08x\n", it->first);
+                    HeapFree(GetProcessHeap(), 0, it->second);
+                    _my_handles.erase(it);
+                }
+            }
+        }
+    }
+    */
     if (rs) {
         if (rs->filename) {
             DBG {
@@ -1069,7 +1192,7 @@ DWORD lcpk_after_read(struct READ_STRUCT* rs)
                     DWORD bytesRead = 0;
                     DWORD offset = rs->offset - rs->orgOffset;
                     SetFilePointer(handle, offset, NULL, FILE_BEGIN);
-                    ReadFile(handle, rs->buffer, rs->sizeOfBuffer, &bytesRead, NULL); 
+                    ReadFile(handle, rs->buffer, rs->size, &bytesRead, NULL); 
                     if (bytesRead > 0) {
                         DBG log_(L"Read replacement data (%d bytes). HOORAY!\n", bytesRead);
                     }
@@ -1114,25 +1237,92 @@ void lcpk_after_read_cp()
     }
 }
 
+DWORD lcpk_before_read(struct READ_STRUCT* rs)
+{
+    if (rs && rs->filename) {
+        wstring *fn = have_live_file(rs->filename);
+        if (fn != NULL) {
+            HANDLE handle;
+            handle = CreateFileW(fn->c_str(),         // file to open
+                               GENERIC_READ,          // open for reading
+                               FILE_SHARE_READ,       // share for reading
+                               NULL,                  // default security
+                               OPEN_EXISTING,         // existing file only
+                               FILE_ATTRIBUTE_NORMAL, // normal file
+                               NULL);                 // no attr. template
+
+            if (handle != INVALID_HANDLE_VALUE)
+            {
+                log_(L"Preparing read into buffer: %p\n", rs->buffer + rs->bufferOffset);
+                
+                /*
+                //char *s = strchr(rs->filename,'/');
+                //if (s && strcmp(s,"/u0100g1.dds")==0) {
+                    DWORD *p = (DWORD*)rs;
+                    for (int y=0; y<20; y++) {
+                        log_(L"%08x: ", (DWORD)p);
+                        for (int x=0; x<4; x++) {
+                            log_(L"%08x ", *p);
+                            p++;
+                        }
+                        log_(L"\n");
+                    }
+                //}
+                */
+                
+                SetFilePointer(handle, rs->offset + rs->bufferOffset, NULL, FILE_BEGIN);
+                _my_reads.insert(pair<BYTE*,HANDLE>(rs->buffer + rs->bufferOffset, handle));
+            }
+        }
+    }
+    return 0;
+}
+
+void lcpk_before_read_cp()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        pushfd
+        push ebp
+        push eax
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        push esi  // pointer to read_struct
+        call lcpk_before_read
+        add esp,0x04     // pop parameters
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop eax
+        pop ebp
+        popfd
+        jmp _before_read_org // jump to original target
+    }
+}
+
 DWORD lcpk_lookup_file(char *filename, struct CPK_INFO* cpk_info)
 {
     char tmp[128];
     if (cpk_info && cpk_info->cpk_filename) {
-        if (memcmp(
-            //cpk_info->cpk_filename, ".\\Data\\dt00_win.cpk")==0) {
-            cpk_info->cpk_filename + 7, "dt70_win", 8)==0) {
-            if (have_live_file(filename) != NULL) {
-                // replace with a known original file
+        if (have_live_file(filename) != NULL) {
+            if (memcmp(cpk_info->cpk_filename + 7, "dt36_win", 8)==0) {
+                // replace with a known original filename
                 strncpy(tmp, filename, sizeof(tmp));
-                //char *ext = filename + strlen(filename) - 4;
-                //if (stricmp(ext, ".usm")==0) {
-                //    strcpy(filename, "\\movie\\WEPES_CI.usm");
-                //} else {
-                    //strcpy(filename, "\\common\\etc\\TeamColor.bin");
-                    strcpy(filename, "\\movie\\acl_a.usm");
-                //}
-                // keep the original name
+                strcpy(filename, 
+                    "\\common\\character0\\model\\character"
+                    "\\appearance\\PlayerAppearance.bin");
+                // keep the original name for later use
                 strcpy(filename + strlen(filename) + 1, tmp);
+            }
+            else {
+                strcpy(filename, "\\not-a-file");
             }
         }
     }
