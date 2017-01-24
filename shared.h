@@ -6,7 +6,7 @@ struct WSTR_INFO {
     wchar_t *s[1];
 };
 
-#pragma data_seg(".SIDERSH")
+#pragma data_seg(".sidrsh")
 BYTE _shared_data[4096] = "\0\0\0\0\0\0\0\0";
 #pragma data_seg()
 

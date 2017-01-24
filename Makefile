@@ -34,7 +34,7 @@ version.obj: version.cpp
 
 sider.obj: sider.cpp sider.h
 sider.dll: sider.obj imageutil.obj version.obj sider.res
-	$(LINK) $(LFLAGS) /out:sider.dll /DLL sider.obj imageutil.obj version.obj sider.res $(LIBS) /SECTION:.SIDERSH,RWS
+	$(LINK) $(LFLAGS) /out:sider.dll /DLL sider.obj imageutil.obj version.obj sider.res $(LIBS) /SECTION:.sidrsh,RWS
 
 sider.exe: main.obj sider.dll sider_main.res
 	$(LINK) $(LFLAGS) /out:sider.exe main.obj sider_main.res $(LIBS) sider.lib
