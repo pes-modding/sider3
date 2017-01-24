@@ -18,9 +18,6 @@ using namespace stdext;
 static DWORD get_target_addr(DWORD call_location);
 static void hook_call_point(DWORD addr, void* func, int codeShift, int numNops, bool addRetn=false);
 
-void lcpk_get_buffer_size_cp();
-void lcpk_create_buffer_cp();
-void lcpk_after_read_cp();
 void lcpk_lookup_file_cp();
 void lcpk_get_file_info_cp();
 void lcpk_before_read_cp();
@@ -248,9 +245,6 @@ public:
     bool _cut_scenes;
     int _camera_sliders_max;
     bool _camera_dynamic_wide_angle_enabled;
-    DWORD _hp_get_buffer_size;
-    DWORD _hp_create_buffer;
-    DWORD _hp_after_read;
     DWORD _hp_lookup_file;
     DWORD _hp_get_file_info;
     DWORD _hp_before_read;
@@ -265,9 +259,6 @@ public:
                  _cut_scenes(false),
                  _camera_sliders_max(0),
                  _camera_dynamic_wide_angle_enabled(false),
-                 _hp_get_buffer_size(0),
-                 _hp_create_buffer(0),
-                 _hp_after_read(0),
                  _hp_lookup_file(0),
                  _hp_get_file_info(0),
                  _hp_before_read(0),
@@ -298,24 +289,10 @@ public:
                 // handle relative roots
                 if (value[0]==L'.') {
                     wstring rel(value);
-                    log_(L"rel.size() = %d\n", rel.size());
                     value = sider_dir;
                     value += rel;
-                    log_(L"value.size() = %d\n", value.size());
                 }
                 _cpk_roots.push_back(value);
-            }
-            else if (wcscmp(L"hook.get-buffer-size", key.c_str())==0) {
-                swscanf(value.c_str(), L"0x%x", &_hp_get_buffer_size);
-            }
-            else if (wcscmp(L"hook.create-buffer", key.c_str())==0) {
-                swscanf(value.c_str(), L"0x%x", &_hp_create_buffer);
-            }
-            else if (wcscmp(L"hook.after-read", key.c_str())==0) {
-                swscanf(value.c_str(), L"0x%x", &_hp_after_read);
-            }
-            else if (wcscmp(L"hook.lookup-file", key.c_str())==0) {
-                swscanf(value.c_str(), L"0x%x", &_hp_lookup_file);
             }
 
             p += wcslen(p) + 1;
@@ -655,8 +632,7 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
         if (all_found) {
             hook_call_point(_config->_hp_get_file_info,
                 lcpk_get_file_info_cp, 6, 3);
-            //hook_call_point(_config->_hp_create_buffer,
-            //    lcpk_create_buffer_cp, 6, 1);
+
             hook_call_point(_config->_hp_at_read_file,
                 lcpk_at_read_file, 0, 1);
 
@@ -981,13 +957,13 @@ BOOL WINAPI lcpk_at_read_file(
     it = _my_reads.find(buffer);
     if (it != _my_reads.end()) {
         // switch handle
-        log_(L"Switching handle: %08x --> %08x\n", hFile, it->second);
+        DBG log_(L"Switching handle: %08x --> %08x\n", hFile, it->second);
         org_handle = hFile;
         hFile = it->second;
         switching = true;
     }
 
-    log_(L"READ FILE: into %p (num bytes: %08x)\n", lpBuffer, nNumberOfBytesToRead);
+    DBG log_(L"ReadFile: into %p (num bytes: %08x)\n", lpBuffer, nNumberOfBytesToRead);
     DWORD result = ReadFile(hFile, lpBuffer, nNumberOfBytesToRead,
         lpNumberOfBytesRead, lpOverlapped);
 
@@ -1000,246 +976,17 @@ BOOL WINAPI lcpk_at_read_file(
     return result;
 }
 
-DWORD lcpk_get_buffer_size(char* file_name, DWORD* p_org_size)
-{
-    wstring *fn = have_live_file(file_name);
-    if (fn != NULL) {
-        DWORD size = 0;
-        HANDLE handle;
-        handle = CreateFileW(fn->c_str(),           // file to open
-                           GENERIC_READ,          // open for reading
-                           FILE_SHARE_READ,       // share for reading
-                           NULL,                  // default security
-                           OPEN_EXISTING,         // existing file only
-                           FILE_ATTRIBUTE_NORMAL,  // normal file
-                           NULL);                 // no attr. template
-
-        if (handle != INVALID_HANDLE_VALUE)
-        {
-            DBG log_(L"Found file:: %s\n", fn->c_str());
-            size = GetFileSize(handle,NULL);
-            DBG log_(L"Corrected size: %d --> %d\n", *p_org_size, size);
-            *p_org_size = size;
-            CloseHandle(handle);
-        }
-    }
-
-    //wchar_t s[512];
-    //memset(s, 0, sizeof(s));
-    //Utf8::fUtf8ToUnicode(s, file_name);
-    //log_(L"File: %s, size: %d\n", s, *p_org_size);
-    return 0;
-}
-
-void lcpk_get_buffer_size_cp()
-{
-    __asm {
-        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
-        // apparently checks for stack alignment and bad things happen, if it's not
-        // DWORD-aligned. (For example, all file operations fail!)
-        pushfd 
-        push ebp
-        push eax
-        push ebx
-        push ecx
-        push edx
-        push esi
-        push edi
-        lea eax,dword ptr ss:[esp+0x20+32]
-        push eax // pointer to org-size
-        mov eax,dword ptr ss:[esp+8+32+4]
-        push eax // file name
-        call lcpk_get_buffer_size
-        add esp,0x08     // pop parameters
-        pop edi
-        pop esi
-        pop edx
-        pop ecx
-        pop ebx
-        pop eax
-        pop ebp
-        popfd
-        //mov ecx,dword ptr ss:[ebp-0x40] // execute replaced code
-        mov ecx,dword ptr ss:[esp+0x24] // execute replaced code
-        retn
-    }
-}
-
-DWORD lcpk_create_buffer(DWORD* file_name_addr, DWORD* buffer)
-{
-    if (file_name_addr) {
-        char *file_name = NULL;
-        DWORD name_buffer_size = *(DWORD*)((DWORD)file_name_addr + 0x10);
-        log_(L"name_buffer_size: %d\n", name_buffer_size);
-        if (name_buffer_size > 0 && name_buffer_size < 16) {
-            file_name = (char*)file_name_addr; // on stack directly
-        } else {
-            file_name = *(char**)file_name_addr; // elsewhere
-        }
-            
-        // associate buffer address with filename
-        string name(file_name);
-        
-        DBG {
-            wchar_t *s = Utf8::utf8ToUnicode((BYTE*)file_name);
-            log_(L"Association: %p <-- %s\n", buffer, s); 
-            Utf8::free(s);
-        }
-
-        pair<hash_map<DWORD*,string>::iterator,bool> ires =
-            _assoc.insert(pair<DWORD*,string>(buffer,name));
-        if (!ires.second)
-        {
-            log_(L"WARNING: updating existing entry (buffer: %p)\n", buffer);
-        }
-    }
- 
-    return (DWORD)buffer;
-}
-
-void lcpk_create_buffer_cp()
-{
-    __asm {
-        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
-        // apparently checks for stack alignment and bad things happen, if it's not
-        // DWORD-aligned. (For example, all file operations fail!)
-        pushfd 
-        push ebp
-        push eax
-        push ebx
-        push ecx
-        push edx
-        push esi
-        push edi
-        push eax // buffer address
-        lea ebx,dword ptr ss:[esp+0x28+32+8]
-        push ebx // file name
-        call lcpk_create_buffer
-        add esp,0x08     // pop parameters
-        pop edi
-        pop esi
-        pop edx
-        pop ecx
-        pop ebx
-        pop eax
-        pop ebp
-        popfd
-        mov dword ptr ds:[esi+0x38],eax // execute replaced code
-        cmp dword ptr ds:[esi+0x38],ebx
-        retn
-    }
-}
-
-DWORD lcpk_after_read(struct READ_STRUCT* rs)
-{
-    /*
-    if (rs && rs->fileHandleInfo) {
-        if (rs->filename) {
-            DBG {
-                wchar_t *s = Utf8::utf8ToUnicode((BYTE*)(rs->filename));
-                log_(L"READ bytes into (%p) from: %s (off:%08x, size:%08x)\n",
-                    rs->buffer, s, rs->offset - rs->orgOffset, rs->sizeRead);
-                Utf8::free(s);
-            }
-
-            FILE_HANDLE_INFO *fhi = rs->fileHandleInfo;
-            if (fhi && fhi->handle) {
-                hash_map<HANDLE,FILE_HANDLE_INFO*>::iterator it;
-                it = _my_handles.find((HANDLE)fhi->handle);
-                if (it != _my_handles.end()) {
-                    // restore
-                    //memcpy(fhi, it->second, sizeof(*fhi));
-                    fhi->handle = it->second->handle;
-                    fhi->size = it->second->size;
-
-                    rs->cpkFileSize = fhi->size;
-                    fhi->currentOffset += rs->sizeRead;
-
-                    CloseHandle(it->first);
-                    log_(L"Closed my handle: %08x\n", it->first);
-                    HeapFree(GetProcessHeap(), 0, it->second);
-                    _my_handles.erase(it);
-                }
-            }
-        }
-    }
-    */
-    if (rs) {
-        if (rs->filename) {
-            DBG {
-                wchar_t *s = Utf8::utf8ToUnicode((BYTE*)(rs->filename));
-                log_(L"READ bytes into (%p) from: %s (off:%08x, size:%08x)\n",
-                    rs->buffer, s, rs->offset - rs->orgOffset, rs->sizeRead);
-                Utf8::free(s);
-            }
-
-            wstring *fn = have_live_file(rs->filename);
-            if (fn != NULL) {
-                DWORD size = 0;
-                HANDLE handle;
-                handle = CreateFileW(fn->c_str(),           // file to open
-                                   GENERIC_READ,          // open for reading
-                                   FILE_SHARE_READ,       // share for reading
-                                   NULL,                  // default security
-                                   OPEN_EXISTING,         // existing file only
-                                   FILE_ATTRIBUTE_NORMAL,  // normal file
-                                   NULL);                 // no attr. template
-
-                if (handle != INVALID_HANDLE_VALUE)
-                {
-                    DBG log_(L"Found file:: %s\n", fn->c_str());
-                    size = GetFileSize(handle,NULL);
-                    DWORD bytesRead = 0;
-                    DWORD offset = rs->offset - rs->orgOffset;
-                    SetFilePointer(handle, offset, NULL, FILE_BEGIN);
-                    ReadFile(handle, rs->buffer, rs->size, &bytesRead, NULL); 
-                    if (bytesRead > 0) {
-                        DBG log_(L"Read replacement data (%d bytes). HOORAY!\n", bytesRead);
-                    }
-                    CloseHandle(handle);
-                }
-            }
-        }
-        else {
-            DBG log_(L"rs (buffer: %p), but no filename\n", rs->buffer);
-        }
-    }
-    return 0;
-}
-
-void lcpk_after_read_cp()
-{
-    __asm {
-        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
-        // apparently checks for stack alignment and bad things happen, if it's not
-        // DWORD-aligned. (For example, all file operations fail!)
-        pushfd 
-        push ebp
-        push eax
-        push ebx
-        push ecx
-        push edx
-        push esi
-        push edi
-        push esi // struct address
-        call lcpk_after_read
-        add esp,0x04     // pop parameters
-        pop edi
-        pop esi
-        pop edx
-        pop ecx
-        pop ebx
-        pop eax
-        pop ebp
-        popfd
-        mov dword ptr ds:[esi+0x10], 1  // execute replaced code
-        retn
-    }
-}
-
 DWORD lcpk_before_read(struct READ_STRUCT* rs)
 {
     if (rs && rs->filename) {
+        DBG {
+            wchar_t *s = Utf8::utf8ToUnicode((BYTE*)rs->filename);
+            log_(L"Preparing read into buffer: %p from %s (%08x : %08x)\n",
+                rs->buffer + rs->bufferOffset, s,
+                rs->offset + rs->bufferOffset, rs->sizeRead);
+            Utf8::free(s);
+        }
+
         wstring *fn = have_live_file(rs->filename);
         if (fn != NULL) {
             HANDLE handle;
@@ -1253,23 +1000,6 @@ DWORD lcpk_before_read(struct READ_STRUCT* rs)
 
             if (handle != INVALID_HANDLE_VALUE)
             {
-                log_(L"Preparing read into buffer: %p\n", rs->buffer + rs->bufferOffset);
-                
-                /*
-                //char *s = strchr(rs->filename,'/');
-                //if (s && strcmp(s,"/u0100g1.dds")==0) {
-                    DWORD *p = (DWORD*)rs;
-                    for (int y=0; y<20; y++) {
-                        log_(L"%08x: ", (DWORD)p);
-                        for (int x=0; x<4; x++) {
-                            log_(L"%08x ", *p);
-                            p++;
-                        }
-                        log_(L"\n");
-                    }
-                //}
-                */
-                
                 SetFilePointer(handle, rs->offset + rs->bufferOffset, NULL, FILE_BEGIN);
                 _my_reads.insert(pair<BYTE*,HANDLE>(rs->buffer + rs->bufferOffset, handle));
             }
@@ -1322,6 +1052,7 @@ DWORD lcpk_lookup_file(char *filename, struct CPK_INFO* cpk_info)
                 strcpy(filename + strlen(filename) + 1, tmp);
             }
             else {
+                // deliberately force load from dt36
                 strcpy(filename, "\\not-a-file");
             }
         }
