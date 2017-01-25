@@ -5,7 +5,7 @@
 #include <windows.h>
 #include <list>
 #include <string>
-#include <hash_map>
+#include <unordered_map>
 #include "imageutil.h"
 #include "sider.h"
 #include "utf8.h"
@@ -13,7 +13,6 @@
 #define DBG if (_config->_debug)
 
 using namespace std;
-using namespace stdext;
 
 static DWORD get_target_addr(DWORD call_location);
 static void hook_call_point(DWORD addr, void* func, int codeShift, int numNops, bool addRetn=false);
@@ -40,9 +39,7 @@ static DWORD hookingThreadId = 0;
 static HMODULE myHDLL;
 static HHOOK handle;
 
-hash_map<DWORD*,string> _assoc;
-hash_map<string,wstring*> _lookup_cache;
-hash_map<BYTE*,HANDLE> _my_reads;
+unordered_map<string,wstring*> _lookup_cache;
 
 wchar_t module_filename[MAX_PATH];
 wchar_t dll_log[MAX_PATH];
@@ -73,8 +70,6 @@ struct FILE_HANDLE_INFO {
     DWORD zero3;
     DWORD padding[4];
 };
-
-hash_map<HANDLE,FILE_HANDLE_INFO*> _my_handles;
 
 struct READ_STRUCT {
     DWORD dw0;
@@ -900,7 +895,7 @@ wstring* have_live_file(char *file_name)
         // no cache
         return _have_live_file(file_name);
     }
-    hash_map<string,wstring*>::iterator it;
+    unordered_map<string,wstring*>::iterator it;
     it = _lookup_cache.find(string(file_name));
     if (it != _lookup_cache.end()) {
         return it->second;
@@ -1064,8 +1059,6 @@ DWORD lcpk_before_read(struct READ_STRUCT* rs)
 
             if (handle != INVALID_HANDLE_VALUE)
             {
-                //SetFilePointer(handle, rs->offset + rs->bufferOffset, NULL, FILE_BEGIN);
-                //_my_reads.insert(pair<BYTE*,HANDLE>(rs->buffer + rs->bufferOffset, handle));
                 rs->dw4 = (DWORD)handle;
             }
         }
