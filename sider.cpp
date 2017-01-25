@@ -23,11 +23,17 @@ void lcpk_get_file_info_cp();
 void lcpk_before_read_cp();
 
 BOOL WINAPI lcpk_at_read_file(
-  _In_        HANDLE       hFile,
-  _Out_       LPVOID       lpBuffer,
-  _In_        DWORD        nNumberOfBytesToRead,
-  _Out_opt_   LPDWORD      lpNumberOfBytesRead,
-  _Inout_opt_ LPOVERLAPPED lpOverlapped);
+    _In_        HANDLE       hFile,
+    _Out_       LPVOID       lpBuffer,
+    _In_        DWORD        nNumberOfBytesToRead,
+    _Out_opt_   LPDWORD      lpNumberOfBytesRead,
+    _Inout_opt_ LPOVERLAPPED lpOverlapped);
+
+DWORD WINAPI lcpk_at_set_file_pointer(
+    _In_        HANDLE hFile,
+    _In_        LONG   lDistanceToMove,
+    _Inout_opt_ PLONG  lpDistanceToMoveHigh,
+    _In_        DWORD  dwMoveMethod);
 
 static DWORD dwThreadId;
 static DWORD hookingThreadId = 0;
@@ -95,6 +101,14 @@ struct READ_STRUCT {
     char filename[0x80];
 };
 
+struct READ_REPL {
+    DWORD replaceFlag;
+    BYTE *realBuffer;
+    DWORD realOffset;
+    READ_STRUCT *rs;
+    HANDLE handle;
+};
+
 // original call destination of "lookup_file"
 static DWORD _lookup_file_org = 0;
 
@@ -145,6 +159,15 @@ BYTE lcpk_pattern_at_read_file[14] =
     "\xff\x37"
     "\xff\x15";
 int lcpk_offs_at_read_file = 11;
+
+BYTE lcpk_pattern_at_set_file_pointer[23] =
+    "\xff\x75\x14"
+    "\x89\x85\xfc\xff\xff\xff"
+    "\x8d\x85\xfc\xff\xff\xff"
+    "\x50"
+    "\xff\x75\x0c"
+    "\xff\x75\x08";
+int lcpk_offs_at_set_file_pointer = 22;
 
 bool patched(false);
 bool patched2(false);
@@ -236,6 +259,7 @@ class config_t {
 public:
     bool _debug;
     bool _livecpk_enabled;
+    bool _lookup_cache_enabled;
     wstring _section_name;
     list<wstring> _code_sections;
     list<wstring> _cpk_roots;
@@ -249,11 +273,13 @@ public:
     DWORD _hp_get_file_info;
     DWORD _hp_before_read;
     DWORD _hp_at_read_file;
+    DWORD _hp_at_set_file_pointer;
 
     config_t(const wstring& section_name, const wchar_t* config_ini) : 
                  _section_name(section_name),
                  _debug(false),
                  _livecpk_enabled(false),
+                 _lookup_cache_enabled(true),
                  _free_select_sides(false),
                  _free_first_player(false),
                  _cut_scenes(false),
@@ -262,7 +288,8 @@ public:
                  _hp_lookup_file(0),
                  _hp_get_file_info(0),
                  _hp_before_read(0),
-                 _hp_at_read_file(0)
+                 _hp_at_read_file(0),
+                 _hp_at_set_file_pointer(0)
     {
         wchar_t settings[32767];
         RtlZeroMemory(settings, sizeof(settings));
@@ -304,6 +331,10 @@ public:
         
         _livecpk_enabled = GetPrivateProfileInt(_section_name.c_str(),
             L"livecpk.enabled", _debug,
+            config_ini);
+        
+        _lookup_cache_enabled = GetPrivateProfileInt(_section_name.c_str(),
+            L"lookup-cache.enabled", _debug,
             config_ini);
         
         _free_select_sides = GetPrivateProfileInt(_section_name.c_str(),
@@ -597,29 +628,33 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
     bool result(false);
 
     if (_config->_livecpk_enabled) {
-        BYTE *frag[4];
+        BYTE *frag[5];
         frag[0] = lcpk_pattern_get_file_info;
         frag[1] = lcpk_pattern_at_read_file;
         frag[2] = lcpk_pattern_lookup_file;
         frag[3] = lcpk_pattern_before_read;
-        size_t frag_len[4];
+        frag[4] = lcpk_pattern_at_set_file_pointer;
+        size_t frag_len[5];
         frag_len[0] = sizeof(lcpk_pattern_get_file_info)-1;
         frag_len[1] = sizeof(lcpk_pattern_at_read_file)-1;
         frag_len[2] = sizeof(lcpk_pattern_lookup_file)-1;
         frag_len[3] = sizeof(lcpk_pattern_before_read)-1;
-        int offs[4];
+        frag_len[4] = sizeof(lcpk_pattern_at_set_file_pointer)-1;
+        int offs[5];
         offs[0] = 0;
         offs[1] = lcpk_offs_at_read_file;
         offs[2] = lcpk_offs_lookup_file;
         offs[3] = lcpk_offs_before_read;
-        DWORD *addrs[4];
+        offs[4] = lcpk_offs_at_set_file_pointer;
+        DWORD *addrs[5];
         addrs[0] = &_config->_hp_get_file_info;
         addrs[1] = &_config->_hp_at_read_file;
         addrs[2] = &_config->_hp_lookup_file;
         addrs[3] = &_config->_hp_before_read;
+        addrs[4] = &_config->_hp_at_set_file_pointer;
 
         bool all_found(true);
-        for (int j=0; j<4; j++) {
+        for (int j=0; j<5; j++) {
             BYTE *p = find_code_frag(base, h->Misc.VirtualSize, 
                 frag[j], frag_len[j]);
             if (!p) {
@@ -635,6 +670,9 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
 
             hook_call_point(_config->_hp_at_read_file,
                 lcpk_at_read_file, 0, 1);
+
+            hook_call_point(_config->_hp_at_set_file_pointer,
+                lcpk_at_set_file_pointer, 0, 1);
 
             _lookup_file_org = get_target_addr(_config->_hp_lookup_file);
             hook_call_point(_config->_hp_lookup_file,
@@ -858,6 +896,10 @@ wstring* _have_live_file(char *file_name)
 
 wstring* have_live_file(char *file_name)
 {
+    if (!_config->_lookup_cache_enabled) {
+        // no cache
+        return _have_live_file(file_name);
+    }
     hash_map<string,wstring*>::iterator it;
     it = _lookup_cache.find(string(file_name));
     if (it != _lookup_cache.end()) {
@@ -943,36 +985,58 @@ void lcpk_get_file_info_cp()
     }
 }
 
-BOOL WINAPI lcpk_at_read_file(
-  _In_        HANDLE       hFile,
-  _Out_       LPVOID       lpBuffer,
-  _In_        DWORD        nNumberOfBytesToRead,
-  _Out_opt_   LPDWORD      lpNumberOfBytesRead,
-  _Inout_opt_ LPOVERLAPPED lpOverlapped) 
+DWORD WINAPI lcpk_at_set_file_pointer(
+    _In_        HANDLE hFile,
+    _In_        LONG   lDistanceToMove,
+    _Inout_opt_ PLONG  lpDistanceToMoveHigh,
+    _In_        DWORD  dwMoveMethod)
 {
-    bool switching(false);
-    HANDLE org_handle;
-    BYTE *buffer = (BYTE*)lpBuffer;
-    hash_map<BYTE*,HANDLE>::iterator it;
-    it = _my_reads.find(buffer);
-    if (it != _my_reads.end()) {
-        // switch handle
-        DBG log_(L"Switching handle: %08x --> %08x\n", hFile, it->second);
-        org_handle = hFile;
-        hFile = it->second;
-        switching = true;
+    DWORD _ebp;
+    READ_STRUCT *rs;
+
+    __asm mov _ebp,ebp;
+    DBG log_(L"_ebp: %p\n", _ebp);
+    rs = *(READ_STRUCT**)(_ebp + 0x7c);
+    
+    if (rs->dw4) {
+        // switch file handle
+        DBG log_(L"Switching handle: %08x --> %08x\n", hFile, rs->dw4);
+        hFile = (HANDLE)rs->dw4;
+    }
+
+    DBG log_(L"SetFilePointer: (offset: %08x)\n", lDistanceToMove);
+    return SetFilePointer(
+        hFile, lDistanceToMove, lpDistanceToMoveHigh, dwMoveMethod);
+}
+
+BOOL WINAPI lcpk_at_read_file(
+    _In_        HANDLE       hFile,
+    _Out_       LPVOID       lpBuffer,
+    _In_        DWORD        nNumberOfBytesToRead,
+    _Out_opt_   LPDWORD      lpNumberOfBytesRead,
+    _Inout_opt_ LPOVERLAPPED lpOverlapped) 
+{
+    DWORD _ebp;
+    READ_STRUCT *rs;
+
+    __asm mov _ebp,ebp;
+    DBG log_(L"ReadFile: _ebp: %p\n", _ebp);
+    rs = *(READ_STRUCT**)(_ebp + 0x60);
+
+    if (rs->dw4) {
+        // switch file handle
+        DBG log_(L"Switching handle: %08x --> %08x\n", hFile, rs->dw4);
+        hFile = (HANDLE)rs->dw4;
     }
 
     DBG log_(L"ReadFile: into %p (num bytes: %08x)\n", lpBuffer, nNumberOfBytesToRead);
     DWORD result = ReadFile(hFile, lpBuffer, nNumberOfBytesToRead,
         lpNumberOfBytesRead, lpOverlapped);
 
-    if (switching) {
-        // emulate read
-        //SetFilePointer(org_handle, *lpNumberOfBytesRead, NULL, FILE_CURRENT); 
-        CloseHandle(it->first);
-        _my_reads.erase(it);
+    if (rs->dw4) {
+        CloseHandle((HANDLE)rs->dw4);
     }
+
     return result;
 }
 
@@ -1000,8 +1064,9 @@ DWORD lcpk_before_read(struct READ_STRUCT* rs)
 
             if (handle != INVALID_HANDLE_VALUE)
             {
-                SetFilePointer(handle, rs->offset + rs->bufferOffset, NULL, FILE_BEGIN);
-                _my_reads.insert(pair<BYTE*,HANDLE>(rs->buffer + rs->bufferOffset, handle));
+                //SetFilePointer(handle, rs->offset + rs->bufferOffset, NULL, FILE_BEGIN);
+                //_my_reads.insert(pair<BYTE*,HANDLE>(rs->buffer + rs->bufferOffset, handle));
+                rs->dw4 = (DWORD)handle;
             }
         }
     }
