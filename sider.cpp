@@ -255,6 +255,7 @@ public:
     bool _debug;
     bool _livecpk_enabled;
     bool _lookup_cache_enabled;
+    int _dll_mapping_option;
     wstring _section_name;
     list<wstring> _code_sections;
     list<wstring> _cpk_roots;
@@ -275,6 +276,7 @@ public:
                  _debug(false),
                  _livecpk_enabled(false),
                  _lookup_cache_enabled(true),
+                 _dll_mapping_option(0),
                  _free_select_sides(false),
                  _free_first_player(false),
                  _cut_scenes(false),
@@ -325,11 +327,15 @@ public:
             config_ini);
         
         _livecpk_enabled = GetPrivateProfileInt(_section_name.c_str(),
-            L"livecpk.enabled", _debug,
+            L"livecpk.enabled", _livecpk_enabled,
             config_ini);
         
         _lookup_cache_enabled = GetPrivateProfileInt(_section_name.c_str(),
-            L"lookup-cache.enabled", _debug,
+            L"lookup-cache.enabled", _lookup_cache_enabled,
+            config_ini);
+
+        _dll_mapping_option = GetPrivateProfileInt(_section_name.c_str(),
+            L"dll-mapping.option", _dll_mapping_option,
             config_ini);
         
         _free_select_sides = GetPrivateProfileInt(_section_name.c_str(),
@@ -467,6 +473,10 @@ struct WSTR_INFO *get_wi() {
     return (struct WSTR_INFO*)_shared_data;
 }
 
+int *get_dll_mapping_option() {
+    return &_dll_mapping_option;
+}
+
 static bool is_pes(wchar_t* name, wchar_t** match)
 {
     struct WSTR_INFO *wi = get_wi();
@@ -581,6 +591,8 @@ DWORD install_func(LPVOID thread_param) {
 
     log_(L"debug = %d\n", _config->_debug);
     log_(L"livecpk.enabled = %d\n", _config->_livecpk_enabled);
+    log_(L"lookup-cache.enabled = %d\n", _config->_lookup_cache_enabled);
+    log_(L"dll-mapping.option = %d\n", *get_dll_mapping_option());
 
     for (list<wstring>::iterator it = _config->_cpk_roots.begin();
             it != _config->_cpk_roots.end();
@@ -1151,18 +1163,19 @@ void lcpk_lookup_file_cp()
 INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved) 
 {
     wchar_t *match = NULL;
+    INT result = (*get_dll_mapping_option() == 1) ? TRUE : FALSE;
 
     switch(Reason) {
         case DLL_PROCESS_ATTACH:
             myHDLL = hDLL;
             memset(module_filename, 0, sizeof(module_filename));
             if (GetModuleFileName(NULL, module_filename, MAX_PATH)==0) {
-                return FALSE;
+                return result;
             }
             //log_(L"DLL_PROCESS_ATTACH: %s\n", module_filename);
 
             if (skip_process(module_filename)) {
-                return FALSE;
+                return result;
             }
 
             if (is_pes(module_filename, &match)) {
@@ -1189,6 +1202,9 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
                 // initialize shared memory
                 // this info will be later used by sider.dll when
                 // it gets mapped into processes
+                int *p_dll_mapping_option = get_dll_mapping_option();
+                *p_dll_mapping_option = _config->_dll_mapping_option;
+
                 struct WSTR_INFO *wi = get_wi();
                 wi->count = _config->_exe_names.size();
                 wchar_t *p = (wchar_t*)(
@@ -1205,7 +1221,7 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
                 return TRUE;
             }
 
-            return FALSE;
+            return result;
             break;
 
         case DLL_PROCESS_DETACH:
