@@ -1002,7 +1002,7 @@ DWORD WINAPI lcpk_at_set_file_pointer(
     READ_STRUCT *rs;
 
     __asm mov _ebp,ebp;
-    DBG log_(L"_ebp: %p\n", _ebp);
+    //DBG log_(L"SetFilePointer: _ebp: %p\n", _ebp);
     rs = *(READ_STRUCT**)(_ebp + 0x7c);
     
     if (rs->dw4) {
@@ -1027,7 +1027,7 @@ BOOL WINAPI lcpk_at_read_file(
     READ_STRUCT *rs;
 
     __asm mov _ebp,ebp;
-    DBG log_(L"ReadFile: _ebp: %p\n", _ebp);
+    //DBG log_(L"ReadFile: _ebp: %p\n", _ebp);
     rs = *(READ_STRUCT**)(_ebp + 0x60);
 
     if (rs->dw4) {
