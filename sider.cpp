@@ -993,9 +993,13 @@ DWORD lcpk_get_file_info(struct FILE_INFO* file_info)
 
         if (handle != INVALID_HANDLE_VALUE)
         {
-            DBG log_(L"Found file:: %s\n", fn->c_str());
+            DBG log_(L"[%d] lcpk_get_file_info:: Found file:: %s\n",
+                GetCurrentThreadId(), fn->c_str());
+
             size = GetFileSize(handle,NULL);
-            DBG log_(L"Corrected size: %d --> %d\n", file_info->size, size);
+
+            DBG log_(L"[%d] lcpk_get_file_info:: Corrected size: %d --> %d (%08x)\n",
+                GetCurrentThreadId(), file_info->size, size, size);
 
             file_info->offset = 0;
             file_info->size = size;
@@ -1050,16 +1054,17 @@ DWORD WINAPI lcpk_at_set_file_pointer(
     READ_STRUCT *rs;
 
     __asm mov _ebp,ebp;
-    //DBG log_(L"SetFilePointer: _ebp: %p\n", _ebp);
     rs = *(READ_STRUCT**)(_ebp + 0x7c);
     
     if (rs->dw4) {
         // switch file handle
-        DBG log_(L"Switching handle: %08x --> %08x\n", hFile, rs->dw4);
+        DBG log_(L"[%d] lcpk_at_set_file_pointer:: Switching handle: %08x --> %08x\n",
+            GetCurrentThreadId(), hFile, rs->dw4);
         hFile = (HANDLE)rs->dw4;
     }
 
-    DBG log_(L"SetFilePointer: (offset: %08x)\n", lDistanceToMove);
+    DBG log_(L"[%d] lcpk_at_set_file_pointer:: (offset: %08x)\n",
+        GetCurrentThreadId(), lDistanceToMove);
     return SetFilePointer(
         hFile, lDistanceToMove, lpDistanceToMoveHigh, dwMoveMethod);
 }
@@ -1075,18 +1080,21 @@ BOOL WINAPI lcpk_at_read_file(
     READ_STRUCT *rs;
 
     __asm mov _ebp,ebp;
-    //DBG log_(L"ReadFile: _ebp: %p\n", _ebp);
     rs = *(READ_STRUCT**)(_ebp + 0x60);
 
     if (rs->dw4) {
         // switch file handle
-        DBG log_(L"Switching handle: %08x --> %08x\n", hFile, rs->dw4);
+        DBG log_(L"[%d] lcpk_at_read_file:: Switching handle: %08x --> %08x\n", 
+            GetCurrentThreadId(), hFile, rs->dw4);
         hFile = (HANDLE)rs->dw4;
     }
 
-    DBG log_(L"ReadFile: into %p (num bytes: %08x)\n", lpBuffer, nNumberOfBytesToRead);
     DWORD result = ReadFile(hFile, lpBuffer, nNumberOfBytesToRead,
         lpNumberOfBytesRead, lpOverlapped);
+
+    DBG log_(L"[%d] lcpk_at_read_file:: Read into %p (num bytes: %08x)\n", 
+        GetCurrentThreadId(),
+        lpBuffer, *lpNumberOfBytesRead);
 
     if (rs->dw4) {
         CloseHandle((HANDLE)rs->dw4);
@@ -1100,7 +1108,8 @@ DWORD lcpk_before_read(struct READ_STRUCT* rs)
     if (rs && rs->filename) {
         DBG {
             wchar_t *s = Utf8::utf8ToUnicode((BYTE*)rs->filename);
-            log_(L"Preparing read into buffer: %p from %s (%08x : %08x)\n",
+            log_(L"[%d] lcpk_before_read:: Preparing read into buffer: %p from %s (%08x : %08x)\n",
+                GetCurrentThreadId(),
                 rs->buffer + rs->bufferOffset, s,
                 rs->offset + rs->bufferOffset, rs->sizeRead);
             Utf8::free(s);
@@ -1157,7 +1166,7 @@ void lcpk_before_read_cp()
 
 DWORD lcpk_lookup_file(char *filename, struct CPK_INFO* cpk_info)
 {
-    char tmp[128];
+    char tmp[256];
     if (cpk_info && cpk_info->cpk_filename) {
         if (have_live_file(filename) != NULL) {
             if (memcmp(cpk_info->cpk_filename + 7, "dt36_win", 8)==0) {
