@@ -145,13 +145,6 @@ int init()
     get_module_version(NULL,version);
     start_log_(L"Sider: version %s\n", version.c_str());
     setHook();
-
-    struct WSTR_INFO *wi = get_wi();
-    log_(L"exe pattern count = %d\n", wi->count);
-    for (size_t i=0; i<wi->count; i++) {
-        log_(L"exe pattern to match: %s\n", wi->s[i]);
-    }
-
     log_(L"Main: Init DONE\n");
 	return 0;
 }

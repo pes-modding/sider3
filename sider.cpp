@@ -250,6 +250,11 @@ static void string_strip_quotes(wstring& s)
     s.erase(0,b);
 }
 
+struct mapping_t {
+    size_t var_size;
+    int mapping_option;
+};
+
 class config_t {
 public:
     bool _debug;
@@ -469,24 +474,67 @@ static bool is_sider(wchar_t* name)
     return false;
 }
 
-struct WSTR_INFO *get_wi() {
-    return (struct WSTR_INFO*)_shared_data;
-}
-
-int *get_dll_mapping_option() {
-    return &_dll_mapping_option;
-}
-
-static bool is_pes(wchar_t* name, wchar_t** match)
+static void read_mapping_info(mapping_t *mt, BYTE **patterns)
 {
-    struct WSTR_INFO *wi = get_wi();
-    for (size_t i=0; i<wi->count; i++) {
-        wchar_t *filename = wcsrchr(name, L'\\');
-        if (filename) {
-            if (wcsicmp(filename, wi->s[i]) == 0) {
-                *match = wi->s[i];
+    wstring fname(sider_dir);
+    fname += L"sider-map.dat";
+    FILE *f = _wfopen(fname.c_str(), L"rb");
+    if (!f) {
+        mt->var_size = 0;
+        mt->mapping_option = 0;
+        return;
+    }
+
+    fread(mt, sizeof(*mt), 1, f);
+    *patterns = new BYTE[mt->var_size];
+    fread(*patterns, mt->var_size, 1, f);
+    fclose(f);
+}
+
+static bool write_mapping_info(config_t *config, mapping_t *mt)
+{
+    mt->var_size = 0;
+    mt->mapping_option = config->_dll_mapping_option;
+
+    // create mapping info
+    wstring fname(sider_dir);
+    fname += L"sider-map.dat";
+    FILE *f = _wfopen(fname.c_str(), L"wb");
+    if (!f) {
+        log_(L"FATAL: Problem creating mapping info\n");
+        return false;
+    }
+    fwrite(mt, sizeof(*mt), 1, f);
+
+    for (list<wstring>::iterator it = config->_exe_names.begin();
+            it != _config->_exe_names.end();
+            it++) {
+        size_t len = it->size();
+        fwrite(it->c_str(), len*sizeof(wchar_t), 1, f);
+        fwrite(L"\0", sizeof(wchar_t), 1, f);
+        mt->var_size += (len + 1)*sizeof(wchar_t);
+    }
+
+    // write updated structure header
+    fseek(f, 0, SEEK_SET);
+    fwrite(mt, sizeof(*mt), 1, f);
+    fclose(f);
+    return true;
+}
+
+static bool is_pes(wchar_t* name, mapping_t *mt,
+    BYTE *patterns, wstring** match)
+{
+    wchar_t *filename = wcsrchr(name, L'\\');
+    if (filename) {
+        wchar_t *s = (wchar_t*)patterns;
+        wchar_t *end = (wchar_t*)(patterns + mt->var_size);
+        while (s < end) {
+            if (wcsicmp(filename, s) == 0) {
+                *match = new wstring(s);
                 return true;
             }
+            s = s + wcslen(s) + 1;
         }
     }
     return false;
@@ -592,7 +640,7 @@ DWORD install_func(LPVOID thread_param) {
     log_(L"debug = %d\n", _config->_debug);
     log_(L"livecpk.enabled = %d\n", _config->_livecpk_enabled);
     log_(L"lookup-cache.enabled = %d\n", _config->_lookup_cache_enabled);
-    log_(L"dll-mapping.option = %d\n", *get_dll_mapping_option());
+    log_(L"dll-mapping.option = %d\n", _config->_dll_mapping_option);
 
     for (list<wstring>::iterator it = _config->_cpk_roots.begin();
             it != _config->_cpk_roots.end();
@@ -1162,61 +1210,48 @@ void lcpk_lookup_file_cp()
 
 INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved) 
 {
-    wchar_t *match = NULL;
-    INT result = (*get_dll_mapping_option() == 1) ? TRUE : FALSE;
+    wstring *match = NULL;
+    INT result = FALSE;
+    mapping_t mt;
+    BYTE *patterns;
 
     switch(Reason) {
         case DLL_PROCESS_ATTACH:
             myHDLL = hDLL;
             memset(module_filename, 0, sizeof(module_filename));
             if (GetModuleFileName(NULL, module_filename, MAX_PATH)==0) {
-                return result;
+                return FALSE;
+            }
+            if (!init_paths()) {
+                return FALSE;
             }
             //log_(L"DLL_PROCESS_ATTACH: %s\n", module_filename);
-
             if (skip_process(module_filename)) {
-                return result;
+                return FALSE;
             }
 
-            if (is_pes(module_filename, &match)) {
-                if (!init_paths()) return FALSE;
-                if (!_config) {
-                    read_configuration(_config);
-                }
+            read_mapping_info(&mt, &patterns);
+            result = (mt.mapping_option == 1) ? TRUE : FALSE;
+
+            if (is_pes(module_filename, &mt, patterns, &match)) {
+                read_configuration(_config);
 
                 wstring version;
                 get_module_version(hDLL, version);
                 log_(L"===\n");
                 log_(L"Sider DLL: version %s\n", version.c_str());
-                log_(L"Filename match: %s\n", match);
+                log_(L"Filename match: %s\n", match->c_str());
                 install_func(NULL);
+
+                delete match;
+                delete patterns;
                 return TRUE;
             }
 
             if (is_sider(module_filename)) {
-                if (!init_paths()) return FALSE;
-                if (!_config) {
-                    read_configuration(_config);
-                }
-
-                // initialize shared memory
-                // this info will be later used by sider.dll when
-                // it gets mapped into processes
-                int *p_dll_mapping_option = get_dll_mapping_option();
-                *p_dll_mapping_option = _config->_dll_mapping_option;
-
-                struct WSTR_INFO *wi = get_wi();
-                wi->count = _config->_exe_names.size();
-                wchar_t *p = (wchar_t*)(
-                    (BYTE*)wi + sizeof(wi->count) + sizeof(wchar_t*)*wi->count);
-                size_t i = 0;
-                for (list<wstring>::iterator it = _config->_exe_names.begin();
-                        it != _config->_exe_names.end();
-                        it++, i++) {
-                    size_t len = it->size();
-                    wi->s[i] = p;
-                    wcscpy(p, it->c_str());
-                    p = p + len + 1;
+                read_configuration(_config);
+                if (!write_mapping_info(_config, &mt)) {
+                    return FALSE;
                 }
                 return TRUE;
             }
