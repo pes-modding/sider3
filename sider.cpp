@@ -252,11 +252,6 @@ static void string_strip_quotes(wstring& s)
     s.erase(0,b);
 }
 
-struct mapping_t {
-    size_t var_size;
-    int mapping_option;
-};
-
 class config_t {
 public:
     bool _debug;
@@ -478,22 +473,31 @@ static bool is_sider(wchar_t* name)
 
 static bool write_mapping_info(config_t *config)
 {
-    const DWORD size = 2048;
+    // determine the size needed
+    DWORD size = sizeof(wchar_t);
+    list<wstring>::iterator it;
+    for (it = _config->_exe_names.begin();
+            it != _config->_exe_names.end();
+            it++) {
+        size += sizeof(wchar_t) * (it->size() + 1);
+    }
+
     _mh = CreateFileMapping(
-        INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE | SEC_COMMIT, 0, size, L"Local\\sider-3");
+        INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE | SEC_COMMIT,
+        0, size, L"Local\\sider-3");
     if (!_mh) {
-        log_(L"FATAL: CreateFileMapping FAILED: %d\n", GetLastError());
+        log_(L"W: CreateFileMapping FAILED: %d\n", GetLastError());
         return false;
     }
     wchar_t *mem = (wchar_t*)MapViewOfFile(_mh, FILE_MAP_WRITE, 0, 0, 0);
     if (!mem) {
-        log_(L"FATAL: MapViewOfFile FAILED: %d\n", GetLastError());
+        log_(L"W: MapViewOfFile FAILED: %d\n", GetLastError());
         CloseHandle(_mh);
         return false;
     }
 
     memset(mem, 0, size);
-    for (list<wstring>::iterator it = config->_exe_names.begin();
+    for (it = config->_exe_names.begin();
             it != _config->_exe_names.end();
             it++) {
         wcscpy(mem, it->c_str());
@@ -506,12 +510,12 @@ static bool is_pes(wchar_t* name, wstring** match)
 {
     HANDLE h = OpenFileMapping(FILE_MAP_READ, FALSE, L"Local\\sider-3");
     if (!h) {
-        log_(L"OpenFileMapping FAILED: %d\n", GetLastError());
+        log_(L"R: OpenFileMapping FAILED: %d\n", GetLastError());
         return false;
     }
     BYTE *patterns = (BYTE*)MapViewOfFile(h, FILE_MAP_READ, 0, 0, 0);
     if (!patterns) {
-        log_(L"MapViewOfFile FAILED: %d\n", GetLastError());
+        log_(L"R: MapViewOfFile FAILED: %d\n", GetLastError());
         return false;
     }
 
