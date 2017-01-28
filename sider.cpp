@@ -110,7 +110,9 @@ static DWORD _lookup_file_org = 0;
 // original call destination of "before_read"
 static DWORD _before_read_org = 0;
 
-bool is_game(false);
+bool _is_game(false);
+bool _is_sider(false);
+HANDLE _mh = NULL;
 
 // livecpk patterns
 BYTE lcpk_pattern_get_buffer_size[16] = 
@@ -474,70 +476,61 @@ static bool is_sider(wchar_t* name)
     return false;
 }
 
-static void read_mapping_info(mapping_t *mt, BYTE **patterns)
+static bool write_mapping_info(config_t *config)
 {
-    wstring fname(sider_dir);
-    fname += L"sider-map.dat";
-    FILE *f = _wfopen(fname.c_str(), L"rb");
-    if (!f) {
-        mt->var_size = 0;
-        mt->mapping_option = 0;
-        return;
-    }
-
-    fread(mt, sizeof(*mt), 1, f);
-    *patterns = new BYTE[mt->var_size];
-    fread(*patterns, mt->var_size, 1, f);
-    fclose(f);
-}
-
-static bool write_mapping_info(config_t *config, mapping_t *mt)
-{
-    mt->var_size = 0;
-    mt->mapping_option = config->_dll_mapping_option;
-
-    // create mapping info
-    wstring fname(sider_dir);
-    fname += L"sider-map.dat";
-    FILE *f = _wfopen(fname.c_str(), L"wb");
-    if (!f) {
-        log_(L"FATAL: Problem creating mapping info\n");
+    const DWORD size = 2048;
+    _mh = CreateFileMapping(
+        INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE | SEC_COMMIT, 0, size, L"Local\\sider-3.1.2");
+    if (!_mh) {
+        log_(L"FATAL: CreateFileMapping FAILED: %d\n", GetLastError());
         return false;
     }
-    fwrite(mt, sizeof(*mt), 1, f);
+    wchar_t *mem = (wchar_t*)MapViewOfFile(_mh, FILE_MAP_WRITE, 0, 0, 0);
+    if (!mem) {
+        log_(L"FATAL: MapViewOfFile FAILED: %d\n", GetLastError());
+        CloseHandle(_mh);
+        return false;
+    }
 
+    memset(mem, 0, size);
     for (list<wstring>::iterator it = config->_exe_names.begin();
             it != _config->_exe_names.end();
             it++) {
-        size_t len = it->size();
-        fwrite(it->c_str(), len*sizeof(wchar_t), 1, f);
-        fwrite(L"\0", sizeof(wchar_t), 1, f);
-        mt->var_size += (len + 1)*sizeof(wchar_t);
+        wcscpy(mem, it->c_str());
+        mem += it->size() + 1;
     }
-
-    // write updated structure header
-    fseek(f, 0, SEEK_SET);
-    fwrite(mt, sizeof(*mt), 1, f);
-    fclose(f);
     return true;
 }
 
-static bool is_pes(wchar_t* name, mapping_t *mt,
-    BYTE *patterns, wstring** match)
+static bool is_pes(wchar_t* name, wstring** match)
 {
+    HANDLE h = OpenFileMapping(FILE_MAP_READ, FALSE, L"Local\\sider-3.1.2");
+    if (!h) {
+        log_(L"OpenFileMapping FAILED: %d\n", GetLastError());
+        return false;
+    }
+    BYTE *patterns = (BYTE*)MapViewOfFile(h, FILE_MAP_READ, 0, 0, 0);
+    if (!patterns) {
+        log_(L"MapViewOfFile FAILED: %d\n", GetLastError());
+        return false;
+    }
+
+    bool result = false;
     wchar_t *filename = wcsrchr(name, L'\\');
     if (filename) {
         wchar_t *s = (wchar_t*)patterns;
-        wchar_t *end = (wchar_t*)(patterns + mt->var_size);
-        while (s < end) {
+        while (*s != L'\0') {
             if (wcsicmp(filename, s) == 0) {
                 *match = new wstring(s);
-                return true;
+                result = true;
+                break;
             }
             s = s + wcslen(s) + 1;
         }
     }
-    return false;
+    UnmapViewOfFile(h);
+    CloseHandle(h);
+    return result;
 }
 
 static DWORD get_target_addr(DWORD call_location)
@@ -635,7 +628,7 @@ DWORD install_func(LPVOID thread_param) {
     log_(L"DLL attaching to (%s).\n", module_filename);
     log_(L"Mapped into PES.\n");
 
-    is_game = true;
+    _is_game = true;
 
     log_(L"debug = %d\n", _config->_debug);
     log_(L"livecpk.enabled = %d\n", _config->_livecpk_enabled);
@@ -1221,8 +1214,6 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
 {
     wstring *match = NULL;
     INT result = FALSE;
-    mapping_t mt;
-    BYTE *patterns;
 
     switch(Reason) {
         case DLL_PROCESS_ATTACH:
@@ -1239,10 +1230,16 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
                 return FALSE;
             }
 
-            read_mapping_info(&mt, &patterns);
-            result = (mt.mapping_option == 1) ? TRUE : FALSE;
+            if (is_sider(module_filename)) {
+                _is_sider = true;
+                read_configuration(_config);
+                if (!write_mapping_info(_config)) {
+                    return FALSE;
+                }
+                return TRUE;
+            }
 
-            if (is_pes(module_filename, &mt, patterns, &match)) {
+            if (is_pes(module_filename, &match)) {
                 read_configuration(_config);
 
                 wstring version;
@@ -1253,15 +1250,6 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
                 install_func(NULL);
 
                 delete match;
-                delete patterns;
-                return TRUE;
-            }
-
-            if (is_sider(module_filename)) {
-                read_configuration(_config);
-                if (!write_mapping_info(_config, &mt)) {
-                    return FALSE;
-                }
                 return TRUE;
             }
 
@@ -1271,7 +1259,12 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
         case DLL_PROCESS_DETACH:
             //log_(L"DLL_PROCESS_DETACH: %s\n", module_filename);
 
-            if (is_game) {
+            if (_is_sider) {
+                UnmapViewOfFile(_mh);
+                CloseHandle(_mh);
+            }
+
+            if (_is_game) {
                 log_(L"DLL detaching from (%s).\n", module_filename);
                 log_(L"Unmapping from PES.\n");
 
