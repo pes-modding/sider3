@@ -480,7 +480,7 @@ static bool write_mapping_info(config_t *config)
 {
     const DWORD size = 2048;
     _mh = CreateFileMapping(
-        INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE | SEC_COMMIT, 0, size, L"Local\\sider-3.1.2");
+        INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE | SEC_COMMIT, 0, size, L"Local\\sider-3");
     if (!_mh) {
         log_(L"FATAL: CreateFileMapping FAILED: %d\n", GetLastError());
         return false;
@@ -504,7 +504,7 @@ static bool write_mapping_info(config_t *config)
 
 static bool is_pes(wchar_t* name, wstring** match)
 {
-    HANDLE h = OpenFileMapping(FILE_MAP_READ, FALSE, L"Local\\sider-3.1.2");
+    HANDLE h = OpenFileMapping(FILE_MAP_READ, FALSE, L"Local\\sider-3");
     if (!h) {
         log_(L"OpenFileMapping FAILED: %d\n", GetLastError());
         return false;
