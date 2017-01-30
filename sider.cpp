@@ -166,6 +166,14 @@ BYTE lcpk_pattern_at_set_file_pointer[23] =
     "\xff\x75\x08";
 int lcpk_offs_at_set_file_pointer = 22;
 
+// more patterns
+BYTE bb_pattern[13] =
+    "\x80\x7e\x0c\x00"
+    "\x75\x06"
+    "\x80\x7e\x0d\x00"
+    "\x74\x09";
+int bb_offs = 4;
+
 bool patched(false);
 bool patched2(false);
 bool patched3(false);
@@ -267,6 +275,7 @@ public:
     bool _cut_scenes;
     int _camera_sliders_max;
     bool _camera_dynamic_wide_angle_enabled;
+    bool _black_bars_off;
     DWORD _hp_lookup_file;
     DWORD _hp_get_file_info;
     DWORD _hp_before_read;
@@ -284,6 +293,7 @@ public:
                  _cut_scenes(false),
                  _camera_sliders_max(0),
                  _camera_dynamic_wide_angle_enabled(false),
+                 _black_bars_off(false),
                  _hp_lookup_file(0),
                  _hp_get_file_info(0),
                  _hp_before_read(0),
@@ -346,6 +356,10 @@ public:
 
         _free_first_player = GetPrivateProfileInt(_section_name.c_str(),
             L"free.first.player", _free_first_player,
+            config_ini);
+
+        _black_bars_off = GetPrivateProfileInt(_section_name.c_str(),
+            L"black.bars.off", _black_bars_off,
             config_ini);
 
         //_cut_scenes = GetPrivateProfileInt(_section_name.c_str(),
@@ -678,6 +692,30 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
     base += h->VirtualAddress;
     log_(L"Searching code section at: %08x\n", base);
     bool result(false);
+
+    if (_config->_black_bars_off) {
+        BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
+            bb_pattern, sizeof(bb_pattern)-1);
+        if (!p) {
+            log_(L"Unable to patch: (black bars) code pattern not matched\n");
+        }
+        else {
+            DWORD oldProtection;
+            DWORD newProtection = PAGE_EXECUTE_READWRITE;
+
+            p = p + bb_offs;
+            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+
+            if (VirtualProtect(p, 8, newProtection, &oldProtection)) {
+                memcpy(p, "\x90\x90", 2);
+                VirtualProtect(p, 8, oldProtection, &newProtection);
+                log_(L"Turning black bars off\n");
+            }
+            else {
+                log_(L"PROBLEM with Virtual Protect.\n");
+            }
+        }
+    }
 
     if (_config->_livecpk_enabled) {
         BYTE *frag[5];
