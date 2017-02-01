@@ -703,8 +703,8 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
             DWORD oldProtection;
             DWORD newProtection = PAGE_EXECUTE_READWRITE;
 
-            p = p + bb_offs;
             log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+            p = p + bb_offs;
 
             if (VirtualProtect(p, 8, newProtection, &oldProtection)) {
                 memcpy(p, "\x90\x90", 2);
