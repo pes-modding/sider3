@@ -1,4 +1,4 @@
-Sider v3.1 for Pro Evolution Soccer 2017
+Sider v3.2 for Pro Evolution Soccer 2017
 ========================================
 Copyright (C) 2017 juce, nesa24
 
@@ -86,6 +86,17 @@ livecpk.enabled = 1
 
 - Turns on the LiveCPK functionality of Sider. See below for a more
 detailed explanation in cpk.root option section.
+
+
+black.bars.off = 0
+
+- If you set this option to 1, it will turn off the black bars
+(letterboxing) at the top and bottom of the screen, or on the left/right,
+depending on your playing resolution. NOTE that this only works for the
+match itself, and for the main menu. Some of other menu screens and the
+edit mode, for example, will still have the black bars, regardless of
+this option.
+(0 - black bars, 1 - no black bars)
 
 
 debug = 0
