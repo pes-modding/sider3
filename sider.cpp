@@ -21,6 +21,8 @@ void lcpk_lookup_file_cp();
 void lcpk_get_file_info_cp();
 void lcpk_before_read_cp();
 
+void trophy_map_cp();
+
 BOOL WINAPI lcpk_at_read_file(
     _In_        HANDLE       hFile,
     _Out_       LPVOID       lpBuffer,
@@ -174,6 +176,13 @@ BYTE bb_pattern[13] =
     "\x74\x09";
 int bb_offs = 4;
 
+BYTE trophy_pattern[11] =
+    "\x56"
+    "\x89\xce"
+    "\x50"
+    "\x89\x86\x08\x2c\x00\x00";
+int trophy_offs = 4;
+
 bool patched(false);
 bool patched2(false);
 bool patched3(false);
@@ -276,6 +285,7 @@ public:
     int _camera_sliders_max;
     bool _camera_dynamic_wide_angle_enabled;
     bool _black_bars_off;
+    int _trophy_map;
     DWORD _hp_lookup_file;
     DWORD _hp_get_file_info;
     DWORD _hp_before_read;
@@ -294,6 +304,7 @@ public:
                  _camera_sliders_max(0),
                  _camera_dynamic_wide_angle_enabled(false),
                  _black_bars_off(false),
+                 _trophy_map(0),
                  _hp_lookup_file(0),
                  _hp_get_file_info(0),
                  _hp_before_read(0),
@@ -360,6 +371,10 @@ public:
 
         _black_bars_off = GetPrivateProfileInt(_section_name.c_str(),
             L"black.bars.off", _black_bars_off,
+            config_ini);
+
+        _trophy_map = GetPrivateProfileInt(_section_name.c_str(),
+            L"trophy.map", _trophy_map,
             config_ini);
 
         //_cut_scenes = GetPrivateProfileInt(_section_name.c_str(),
@@ -714,6 +729,21 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
             else {
                 log_(L"PROBLEM with Virtual Protect.\n");
             }
+        }
+    }
+
+    if (_config->_trophy_map) {
+        BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
+            trophy_pattern, sizeof(trophy_pattern)-1);
+        if (!p) {
+            log_(L"Unable to patch: (trophy check) code pattern not matched\n");
+        }
+        else {
+            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+            p = p + trophy_offs;
+
+            log_(L"Enabling trophy map\n");
+            hook_call_point((DWORD)p, trophy_map_cp, 6, 1);
         }
     }
 
@@ -1249,6 +1279,43 @@ void lcpk_lookup_file_cp()
         pop ebp
         popfd
         jmp _lookup_file_org // jump to original target
+    }
+}
+
+DWORD trophy_map(DWORD tournament_id)
+{
+    if (tournament_id == 0x65) {
+        tournament_id = _config->_trophy_map;
+    }
+    return tournament_id;
+}
+
+void trophy_map_cp()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        pushfd
+        push ebp
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        push eax  // tournament id
+        call trophy_map
+        add esp,0x04     // pop parameters
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop ebp
+        popfd
+	mov dword ptr ds:[esi+0x2c08], eax
+	mov dword ptr ss:[esp+4], eax
+        retn
     }
 }
 
