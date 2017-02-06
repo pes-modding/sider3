@@ -1313,8 +1313,8 @@ void trophy_map_cp()
         pop ebx
         pop ebp
         popfd
-	mov dword ptr ds:[esi+0x2c08], eax
-	mov dword ptr ss:[esp+4], eax
+        mov dword ptr ds:[esi+0x2c08], eax
+        mov dword ptr ss:[esp+4], eax
         retn
     }
 }
