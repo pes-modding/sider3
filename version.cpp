@@ -22,11 +22,11 @@ __declspec(dllexport) void get_module_version(HMODULE hmodule, wstring& version)
                     VS_FIXEDFILEINFO *v = (VS_FIXEDFILEINFO *)buffer;
                     wchar_t ver_str[128];
                     memset(ver_str, 0, sizeof(ver_str));
-                    swprintf(ver_str, L"%d.%d.%d",
+                    swprintf(ver_str, L"%d.%d.%d (%d)",
                         (v->dwFileVersionMS >> 16) & 0xffff,
                         (v->dwFileVersionMS) & 0xffff,
-                        (v->dwFileVersionLS >> 16) & 0xffff
-                        //(v->dwFileVersionLS) & 0xffff
+                        (v->dwFileVersionLS >> 16) & 0xffff,
+                        (v->dwFileVersionLS) & 0xffff
                     );
                     version = ver_str;
                  }

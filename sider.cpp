@@ -23,6 +23,9 @@ void lcpk_before_read_cp();
 
 void trophy_map_cp();
 
+int _curr_tournament_id(0);
+bool _replace_trophy(false);
+
 BOOL WINAPI lcpk_at_read_file(
     _In_        HANDLE       hFile,
     _Out_       LPVOID       lpBuffer,
@@ -42,6 +45,7 @@ static HMODULE myHDLL;
 static HHOOK handle;
 
 unordered_map<string,wstring*> _lookup_cache;
+unordered_map<string,wstring*> _trophy_lookup_cache;
 
 wchar_t module_filename[MAX_PATH];
 wchar_t dll_log[MAX_PATH];
@@ -278,6 +282,7 @@ public:
     wstring _section_name;
     list<wstring> _code_sections;
     list<wstring> _cpk_roots;
+    list<wstring> _trophy_roots;
     list<wstring> _exe_names;
     bool _free_select_sides;
     bool _free_first_player;
@@ -285,8 +290,7 @@ public:
     int _camera_sliders_max;
     bool _camera_dynamic_wide_angle_enabled;
     bool _black_bars_off;
-    int _trophy_map_from;
-    int _trophy_map_to;
+    unordered_map<int,int> _trophy_map;
     DWORD _hp_lookup_file;
     DWORD _hp_get_file_info;
     DWORD _hp_before_read;
@@ -305,8 +309,6 @@ public:
                  _camera_sliders_max(0),
                  _camera_dynamic_wide_angle_enabled(false),
                  _black_bars_off(false),
-                 _trophy_map_from(0),
-                 _trophy_map_to(0),
                  _hp_lookup_file(0),
                  _hp_get_file_info(0),
                  _hp_before_read(0),
@@ -343,6 +345,28 @@ public:
                 }
                 _cpk_roots.push_back(value);
             }
+            else if (wcscmp(L"trophy.root", key.c_str())==0) {
+                if (value[value.size()-1] != L'\\') {
+                    value += L'\\';
+                }
+                // handle relative roots
+                if (value[0]==L'.') {
+                    wstring rel(value);
+                    value = sider_dir;
+                    value += rel;
+                }
+                _trophy_roots.push_back(value);
+            }
+            else if (key.find(L"trophy.map.") == 0) {
+                int frm = 0, to = 0;
+                if (swscanf(key.c_str(), L"trophy.map.%d", &frm) == 1) {
+                    to = GetPrivateProfileInt(_section_name.c_str(),
+                        key.c_str(), to, config_ini);
+                    if (frm != 0 && to != 0) {
+                        _trophy_map.insert(std::pair<int,int>(frm,to));
+                    }
+                }
+            }
 
             p += wcslen(p) + 1;
         }
@@ -373,14 +397,6 @@ public:
 
         _black_bars_off = GetPrivateProfileInt(_section_name.c_str(),
             L"black.bars.off", _black_bars_off,
-            config_ini);
-
-        _trophy_map_from = GetPrivateProfileInt(_section_name.c_str(),
-            L"trophy.map.from", _trophy_map_from,
-            config_ini);
-
-        _trophy_map_to = GetPrivateProfileInt(_section_name.c_str(),
-            L"trophy.map.to", _trophy_map_to,
             config_ini);
 
         //_cut_scenes = GetPrivateProfileInt(_section_name.c_str(),
@@ -679,6 +695,11 @@ DWORD install_func(LPVOID thread_param) {
             it++) {
         log_(L"Using cpk.root: %s\n", it->c_str());
     }
+    for (list<wstring>::iterator it = _config->_trophy_roots.begin();
+            it != _config->_trophy_roots.end();
+            it++) {
+        log_(L"Using trophy.root: %s\n", it->c_str());
+    }
 
     if (_config->_code_sections.size() == 0) {
         log_(L"No code sections specified in config: nothing to do then.");
@@ -738,7 +759,7 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
         }
     }
 
-    if (_config->_trophy_map_from) {
+    if (_config->_trophy_map.size() > 0) {
         BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
             trophy_pattern, sizeof(trophy_pattern)-1);
         if (!p) {
@@ -1043,6 +1064,69 @@ wstring* have_live_file(char *file_name)
     }
 }
 
+wstring* _have_trophy_file(char *file_name)
+{
+    wchar_t unicode_filename[512];
+    memset(unicode_filename, 0, sizeof(unicode_filename));
+    Utf8::fUtf8ToUnicode(unicode_filename, file_name);
+
+    wchar_t fn[512];
+    for (list<wstring>::iterator it = _config->_trophy_roots.begin();
+            it != _config->_trophy_roots.end();
+            it++) {
+        memset(fn, 0, sizeof(fn));
+        wcscpy(fn, it->c_str());
+        swprintf(fn + wcslen(fn), L"%d\\", _curr_tournament_id);
+        wchar_t *p = (unicode_filename[0] == L'\\') ? unicode_filename + 1 : unicode_filename;
+        wcscat(fn, p);
+
+        DWORD size = 0;
+        HANDLE handle;
+        handle = CreateFileW(fn,           // file to open
+                           GENERIC_READ,          // open for reading
+                           FILE_SHARE_READ,       // share for reading
+                           NULL,                  // default security
+                           OPEN_EXISTING,         // existing file only
+                           FILE_ATTRIBUTE_NORMAL,  // normal file
+                           NULL);                 // no attr. template
+
+        if (handle != INVALID_HANDLE_VALUE)
+        {
+            CloseHandle(handle);
+            return new wstring(fn);
+        }
+    }
+
+    return NULL;
+}
+
+wstring* have_trophy_file(char *file_name)
+{
+    if (!_replace_trophy) {
+        return NULL;
+    }
+    if (!_config->_lookup_cache_enabled) {
+        // no cache
+        return _have_trophy_file(file_name);
+    }
+    unordered_map<string,wstring*>::iterator it;
+    it = _trophy_lookup_cache.find(string(file_name));
+    if (it != _trophy_lookup_cache.end()) {
+        return it->second;
+    }
+    else {
+        //wchar_t s[128];
+        //memset(s, 0, sizeof(s));
+        //Utf8::fUtf8ToUnicode(s, file_name);
+        //log_(L"_lookup_cache MISS for (%s)\n", s);
+
+        wstring* res = _have_trophy_file(file_name);
+        _trophy_lookup_cache.insert(
+            pair<string,wstring*>(string(file_name),res));
+        return res;
+    }
+}
+
 DWORD lcpk_get_file_info(struct FILE_INFO* file_info)
 {
     char *filename = file_info->filename;
@@ -1050,7 +1134,10 @@ DWORD lcpk_get_file_info(struct FILE_INFO* file_info)
     char *replacement = filename + len + 1;
     filename = (replacement[0]!='\0') ? replacement : filename;
 
-    wstring *fn = have_live_file(filename);
+    wstring *fn = NULL;
+    fn = have_trophy_file(filename);
+    fn = (fn != NULL) ? fn : have_live_file(filename);
+
     if (fn != NULL) {
         DWORD size = 0;
         HANDLE handle;
@@ -1186,7 +1273,9 @@ DWORD lcpk_before_read(struct READ_STRUCT* rs)
             Utf8::free(s);
         }
 
-        wstring *fn = have_live_file(rs->filename);
+        wstring *fn = NULL;
+        fn = have_trophy_file(rs->filename);
+        fn = (fn != NULL) ? fn : have_live_file(rs->filename);
         if (fn != NULL) {
             HANDLE handle;
             handle = CreateFileW(fn->c_str(),         // file to open
@@ -1239,7 +1328,10 @@ DWORD lcpk_lookup_file(char *filename, struct CPK_INFO* cpk_info)
 {
     char tmp[256];
     if (cpk_info && cpk_info->cpk_filename) {
-        if (have_live_file(filename) != NULL) {
+        wstring *fn;
+        fn = have_trophy_file(filename);
+        fn = (fn != NULL) ? fn : have_live_file(filename);
+        if (fn != NULL) {
             if (memcmp(cpk_info->cpk_filename + 7, "dt36_win", 8)==0) {
                 // replace with a known original filename
                 strncpy(tmp, filename, sizeof(tmp));
@@ -1292,10 +1384,15 @@ DWORD trophy_map(DWORD tournament_id)
 {
     log_(L"trophy_map:: tournament_id: %d (%08x)\n",
         tournament_id, tournament_id);
-    if (tournament_id == _config->_trophy_map_from) {
-        tournament_id = _config->_trophy_map_to;
-        log_(L"trophy_map:: switching trophy: %08x --> %08x\n",
-            tournament_id, _config->_trophy_map_to);
+    _replace_trophy = false;
+    unordered_map<int,int>::iterator it;
+    it = _config->_trophy_map.find(tournament_id);
+    if (it != _config->_trophy_map.end()) {
+        log_(L"trophy_map:: switching trophy: %d (%08x) --> %d (%08x)\n",
+            tournament_id, tournament_id, it->second, it->second);
+        _curr_tournament_id = tournament_id;
+        tournament_id = it->second;
+        _replace_trophy = true;
     }
     return tournament_id;
 }
