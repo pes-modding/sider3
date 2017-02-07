@@ -285,7 +285,8 @@ public:
     int _camera_sliders_max;
     bool _camera_dynamic_wide_angle_enabled;
     bool _black_bars_off;
-    int _trophy_map;
+    int _trophy_map_from;
+    int _trophy_map_to;
     DWORD _hp_lookup_file;
     DWORD _hp_get_file_info;
     DWORD _hp_before_read;
@@ -304,7 +305,8 @@ public:
                  _camera_sliders_max(0),
                  _camera_dynamic_wide_angle_enabled(false),
                  _black_bars_off(false),
-                 _trophy_map(0),
+                 _trophy_map_from(0),
+                 _trophy_map_to(0),
                  _hp_lookup_file(0),
                  _hp_get_file_info(0),
                  _hp_before_read(0),
@@ -373,8 +375,12 @@ public:
             L"black.bars.off", _black_bars_off,
             config_ini);
 
-        _trophy_map = GetPrivateProfileInt(_section_name.c_str(),
-            L"trophy.map", _trophy_map,
+        _trophy_map_from = GetPrivateProfileInt(_section_name.c_str(),
+            L"trophy.map.from", _trophy_map_from,
+            config_ini);
+
+        _trophy_map_to = GetPrivateProfileInt(_section_name.c_str(),
+            L"trophy.map.to", _trophy_map_to,
             config_ini);
 
         //_cut_scenes = GetPrivateProfileInt(_section_name.c_str(),
@@ -732,7 +738,7 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
         }
     }
 
-    if (_config->_trophy_map) {
+    if (_config->_trophy_map_from) {
         BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
             trophy_pattern, sizeof(trophy_pattern)-1);
         if (!p) {
@@ -1284,8 +1290,12 @@ void lcpk_lookup_file_cp()
 
 DWORD trophy_map(DWORD tournament_id)
 {
-    if (tournament_id == 0x65) {
-        tournament_id = _config->_trophy_map;
+    log_(L"trophy_map:: tournament_id: %d (%08x)\n",
+        tournament_id, tournament_id);
+    if (tournament_id == _config->_trophy_map_from) {
+        tournament_id = _config->_trophy_map_to;
+        log_(L"trophy_map:: switching trophy: %08x --> %08x\n",
+            tournament_id, _config->_trophy_map_to);
     }
     return tournament_id;
 }
