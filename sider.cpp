@@ -567,6 +567,7 @@ static bool is_pes(wchar_t* name, wstring** match)
     BYTE *patterns = (BYTE*)MapViewOfFile(h, FILE_MAP_READ, 0, 0, 0);
     if (!patterns) {
         log_(L"R: MapViewOfFile FAILED: %d\n", GetLastError());
+        CloseHandle(h);
         return false;
     }
 
