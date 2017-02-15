@@ -1,8 +1,8 @@
 *.obj
-*.exp
-*.lib
+s*.exp
+s*.lib
 *.exe
 *.res
-*.dll
+s*.dll
 *.log*
 *~
