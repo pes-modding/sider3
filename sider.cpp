@@ -456,7 +456,7 @@ bool init_paths() {
 
 __declspec(dllexport) void log_(const wchar_t *format, ...)
 {
-    FILE *file = _wfopen(dll_log, L"a+");
+    FILE *file = _wfopen(dll_log, L"a+, ccs=UTF-8");
     if (file) {
         va_list params;
         va_start(params, format);
@@ -480,7 +480,7 @@ __declspec(dllexport) void logu_(const char *format, ...)
 
 __declspec(dllexport) void start_log_(const wchar_t *format, ...)
 {
-    FILE *file = _wfopen(dll_log, L"wt");
+    FILE *file = _wfopen(dll_log, L"wt, ccs=UTF-8");
     if (file) {
         va_list params;
         va_start(params, format);
@@ -704,6 +704,7 @@ bool _install_func(IMAGE_SECTION_HEADER *h);
 DWORD install_func(LPVOID thread_param) {
     log_(L"DLL attaching to (%s).\n", module_filename);
     log_(L"Mapped into PES.\n");
+    logu_("Check: Тестовая запись (unconverted).\n");
 
     _is_game = true;
 
