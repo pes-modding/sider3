@@ -44,8 +44,9 @@ static DWORD hookingThreadId = 0;
 static HMODULE myHDLL;
 static HHOOK handle;
 
-unordered_map<string,wstring*> _lookup_cache;
-unordered_map<string,wstring*> _trophy_lookup_cache;
+typedef unordered_map<string,wstring*> lookup_cache_t;
+unordered_map<int,lookup_cache_t*> _trophy_lookup_cache;
+lookup_cache_t _lookup_cache;
 
 wchar_t module_filename[MAX_PATH];
 wchar_t dll_log[MAX_PATH];
@@ -465,6 +466,18 @@ __declspec(dllexport) void log_(const wchar_t *format, ...)
     }
 }
 
+__declspec(dllexport) void logu_(const char *format, ...)
+{
+    FILE *file = _wfopen(dll_log, L"a+");
+    if (file) {
+        va_list params;
+        va_start(params, format);
+        vfprintf(file, format, params);
+        va_end(params);
+        fclose(file);
+    }
+}
+
 __declspec(dllexport) void start_log_(const wchar_t *format, ...)
 {
     FILE *file = _wfopen(dll_log, L"wt");
@@ -561,12 +574,20 @@ static bool is_pes(wchar_t* name, wstring** match)
 {
     HANDLE h = OpenFileMapping(FILE_MAP_READ, FALSE, SIDER_FM);
     if (!h) {
-        log_(L"R: OpenFileMapping FAILED: %d\n", GetLastError());
+        int err = GetLastError();
+        wchar_t *t = new wchar_t[MAX_PATH];
+        GetModuleFileName(NULL, t, MAX_PATH);
+        log_(L"R: OpenFileMapping FAILED (for %s): %d\n", t, err);
+        delete t;
         return false;
     }
     BYTE *patterns = (BYTE*)MapViewOfFile(h, FILE_MAP_READ, 0, 0, 0);
     if (!patterns) {
-        log_(L"R: MapViewOfFile FAILED: %d\n", GetLastError());
+        int err= GetLastError();
+        wchar_t *t = new wchar_t[MAX_PATH];
+        GetModuleFileName(NULL, t, MAX_PATH);
+        log_(L"R: MapViewOfFile FAILED (for %s): %d\n", t, err);
+        delete t;
         CloseHandle(h);
         return false;
     }
@@ -1110,9 +1131,20 @@ wstring* have_trophy_file(char *file_name)
         // no cache
         return _have_trophy_file(file_name);
     }
-    unordered_map<string,wstring*>::iterator it;
-    it = _trophy_lookup_cache.find(string(file_name));
-    if (it != _trophy_lookup_cache.end()) {
+    lookup_cache_t* j;
+    unordered_map<int,lookup_cache_t*>::iterator i;
+    i = _trophy_lookup_cache.find(_curr_tournament_id);
+    if (i == _trophy_lookup_cache.end()) {
+        j = new lookup_cache_t();
+        _trophy_lookup_cache.insert(pair<int,lookup_cache_t*>(
+            _curr_tournament_id, j));
+    }
+    else {
+        j = i->second;
+    }
+    lookup_cache_t::iterator it;
+    it = j->find(string(file_name));
+    if (it != j->end()) {
         return it->second;
     }
     else {
@@ -1122,8 +1154,7 @@ wstring* have_trophy_file(char *file_name)
         //log_(L"_lookup_cache MISS for (%s)\n", s);
 
         wstring* res = _have_trophy_file(file_name);
-        _trophy_lookup_cache.insert(
-            pair<string,wstring*>(string(file_name),res));
+        j->insert(pair<string,wstring*>(string(file_name),res));
         return res;
     }
 }
@@ -1165,6 +1196,11 @@ DWORD lcpk_get_file_info(struct FILE_INFO* file_info)
             file_info->size2 = size;
 
             CloseHandle(handle);
+        }
+
+        // clean-up wstring
+        if (!_config->_lookup_cache_enabled) {
+            delete fn;
         }
     }
     return 0;
@@ -1266,12 +1302,10 @@ DWORD lcpk_before_read(struct READ_STRUCT* rs)
 {
     if (rs && rs->filename) {
         DBG {
-            wchar_t *s = Utf8::utf8ToUnicode((BYTE*)rs->filename);
-            log_(L"[%d] lcpk_before_read:: Preparing read into buffer: %p from %s (%08x : %08x)\n",
+            logu_("[%d] lcpk_before_read:: Preparing read into buffer: %p from %s (%08x : %08x)\n",
                 GetCurrentThreadId(),
-                rs->buffer + rs->bufferOffset, s,
+                rs->buffer + rs->bufferOffset, rs->filename,
                 rs->offset + rs->bufferOffset, rs->sizeRead);
-            Utf8::free(s);
         }
 
         wstring *fn = NULL;
@@ -1290,6 +1324,11 @@ DWORD lcpk_before_read(struct READ_STRUCT* rs)
             if (handle != INVALID_HANDLE_VALUE)
             {
                 rs->dw4 = (DWORD)handle;
+            }
+
+            // clean-up wstring
+            if (!_config->_lookup_cache_enabled) {
+                delete fn;
             }
         }
     }
@@ -1345,6 +1384,11 @@ DWORD lcpk_lookup_file(char *filename, struct CPK_INFO* cpk_info)
             else {
                 // deliberately force load from dt36
                 strcpy(filename, "\\not-a-file");
+            }
+
+            // clean-up wstring
+            if (!_config->_lookup_cache_enabled) {
+                delete fn;
             }
         }
     }
