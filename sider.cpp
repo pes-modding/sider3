@@ -10,9 +10,15 @@
 #include "sider.h"
 #include "utf8.h"
 
+#include "lua.hpp"
+#include "lauxlib.h"
+#include "lualib.h"
+
 #define DBG if (_config->_debug)
 
 using namespace std;
+
+lua_State *L = NULL;
 
 static DWORD get_target_addr(DWORD call_location);
 static void hook_call_point(DWORD addr, void* func, int codeShift, int numNops, bool addRetn=false);
@@ -44,9 +50,18 @@ static DWORD hookingThreadId = 0;
 static HMODULE myHDLL;
 static HHOOK handle;
 
+bool trophy_server_make_key(char *file_name, char *key);
+wstring *trophy_server_get_filepath(char *file_name, char *key);
+
 typedef unordered_map<string,wstring*> lookup_cache_t;
-unordered_map<int,lookup_cache_t*> _trophy_lookup_cache;
 lookup_cache_t _lookup_cache;
+
+struct module_t {
+    bool (*make_key)(char *file_name, char *key);
+    wstring* (*get_filepath)(char *file_name, char *key);
+    lookup_cache_t *cache;
+};
+list<module_t*> _modules;
 
 wchar_t module_filename[MAX_PATH];
 wchar_t dll_log[MAX_PATH];
@@ -490,6 +505,15 @@ __declspec(dllexport) void start_log_(const wchar_t *format, ...)
     }
 }
 
+static int sider_log(lua_State *L) {
+    const char *s = luaL_checkstring(L, -1);
+    lua_getfield(L, lua_upvalueindex(1), "_FILE");
+    const char *fname = lua_tostring(L, -1);
+    logu_("[%s] %s\n", fname, s);
+    lua_pop(L, 2);
+    return 0;
+}
+
 void read_configuration(config_t*& config)
 {
     wchar_t names[1024];
@@ -707,6 +731,52 @@ DWORD install_func(LPVOID thread_param) {
     logu_("Check: Тестовая запись (unconverted).\n");
 
     _is_game = true;
+
+    // register trophy server
+    module_t *m = new module_t();
+    m->make_key = trophy_server_make_key;
+    m->get_filepath = trophy_server_get_filepath;
+    m->cache = new lookup_cache_t();
+    _modules.push_back(m);
+
+    L = luaL_newstate();
+    luaL_openlibs(L);
+
+    char *sandbox[] = {
+        "assert", "table", "pairs", "ipairs",
+        "string", "math",
+    };
+
+    // test: run zz.lua in sandbox
+    char *fname = (char*)Utf8::unicodeToUtf8(sider_dir);
+    string fn(fname);
+    fn += "zz.lua";
+    luaL_loadfile(L, fn.c_str());
+    Utf8::free(fname);
+    // prep environment:
+    lua_newtable(L);
+    for (int i=0; i<sizeof(sandbox)/sizeof(char*); i++) {
+        lua_pushstring(L, sandbox[i]);
+        lua_getglobal(L, sandbox[i]);
+        lua_settable(L, -3);
+    }
+    lua_pushstring(L, "log");
+    lua_pushvalue(L, -2);  // upvalue for sider_log C-function
+    lua_pushcclosure(L, sider_log, 1);
+    lua_settable(L, -3);
+    lua_pushstring(L, "_FILE");
+    lua_pushstring(L, "zz.lua");
+    lua_settable(L, -3);
+    // set _ENV
+    const char *name = lua_setupvalue(L, -2, 1);
+    logu_("Set upvalue: %s\n", name);
+    // run chunk
+    if (lua_pcall(L, 0, 0, 0) != LUA_OK) {
+        char *err = strdup(lua_tostring(L, -1));
+        lua_pop(L, 1);
+        logu_("Lua script problem: %s\n", err);
+        free(err);
+    }
 
     log_(L"debug = %d\n", _config->_debug);
     log_(L"livecpk.enabled = %d\n", _config->_livecpk_enabled);
@@ -1087,77 +1157,95 @@ wstring* have_live_file(char *file_name)
     }
 }
 
-wstring* _have_trophy_file(char *file_name)
+bool file_exists(wstring *fullpath)
 {
-    wchar_t unicode_filename[512];
-    memset(unicode_filename, 0, sizeof(unicode_filename));
-    Utf8::fUtf8ToUnicode(unicode_filename, file_name);
+    HANDLE handle = CreateFileW(
+        fullpath->c_str(),     // file to open
+        GENERIC_READ,          // open for reading
+        FILE_SHARE_READ,       // share for reading
+        NULL,                  // default security
+        OPEN_EXISTING,         // existing file only
+        FILE_ATTRIBUTE_NORMAL,  // normal file
+        NULL);                 // no attr. template
 
-    wchar_t fn[512];
-    for (list<wstring>::iterator it = _config->_trophy_roots.begin();
-            it != _config->_trophy_roots.end();
-            it++) {
-        memset(fn, 0, sizeof(fn));
-        wcscpy(fn, it->c_str());
-        swprintf(fn + wcslen(fn), L"%d\\", _curr_tournament_id);
-        wchar_t *p = (unicode_filename[0] == L'\\') ? unicode_filename + 1 : unicode_filename;
-        wcscat(fn, p);
+    if (handle != INVALID_HANDLE_VALUE)
+    {
+        CloseHandle(handle);
+        return true;
+    }
+    return false;
+}
 
-        DWORD size = 0;
-        HANDLE handle;
-        handle = CreateFileW(fn,           // file to open
-                           GENERIC_READ,          // open for reading
-                           FILE_SHARE_READ,       // share for reading
-                           NULL,                  // default security
-                           OPEN_EXISTING,         // existing file only
-                           FILE_ATTRIBUTE_NORMAL,  // normal file
-                           NULL);                 // no attr. template
-
-        if (handle != INVALID_HANDLE_VALUE)
-        {
-            CloseHandle(handle);
-            return new wstring(fn);
+wstring* have_content(char *file_name)
+{
+    char key[512];
+    list<module_t*>::iterator i;
+    for (i = _modules.begin(); i != _modules.end(); i++) {
+        module_t *m = *i;
+        if (!m->make_key || !m->get_filepath) {
+            // this module does not do lcpk operations:
+            // move on to next module
+            continue;
+        }
+        if (m->make_key(file_name, key)) {
+            if (_config->_lookup_cache_enabled) {
+                unordered_map<string,wstring*>::iterator j;
+                j = m->cache->find(key);
+                if (j != m->cache->end()) {
+                    if (j->second != NULL) {
+                        return j->second;
+                    }
+                    // this module does not have the file:
+                    // move on to next module
+                    continue;
+                }
+                else {
+                    // cache the lookup result
+                    wstring *res = m->get_filepath(file_name, key);
+                    m->cache->insert(pair<string,wstring*>(key, res));
+                    if (res) {
+                        // we have a file: stop and return
+                        return res;
+                    }
+                }
+            }
+            else {
+                // no cache: SLOW! ONLY use for troubleshooting
+                wstring *res = m->get_filepath(file_name, key);
+                if (res) {
+                    // we have a file: stop and return
+                    return res;
+                }
+            }
         }
     }
-
     return NULL;
 }
 
-wstring* have_trophy_file(char *file_name)
+bool trophy_server_make_key(char *file_name, char *key)
+{
+    sprintf(key, "%d:%s", _curr_tournament_id, file_name);
+    return true;
+}
+
+wstring *trophy_server_get_filepath(char *file_name, char *key)
 {
     if (!_replace_trophy) {
         return NULL;
     }
-    if (!_config->_lookup_cache_enabled) {
-        // no cache
-        return _have_trophy_file(file_name);
+    list<wstring>::iterator i = _config->_trophy_roots.begin();
+    for (; i != _config->_trophy_roots.end(); i++) {
+        wchar_t *ufn = Utf8::utf8ToUnicode((BYTE*)file_name);
+        wchar_t tmp[512];
+        memset(tmp, 0, sizeof(tmp));
+        swprintf(tmp, L"%s%d\\%s", i->c_str(), _curr_tournament_id, ufn);
+        wstring *res = new wstring(tmp);
+        Utf8::free(ufn);
+        if (file_exists(res)) {
+            return res;
+        }
     }
-    lookup_cache_t* j;
-    unordered_map<int,lookup_cache_t*>::iterator i;
-    i = _trophy_lookup_cache.find(_curr_tournament_id);
-    if (i == _trophy_lookup_cache.end()) {
-        j = new lookup_cache_t();
-        _trophy_lookup_cache.insert(pair<int,lookup_cache_t*>(
-            _curr_tournament_id, j));
-    }
-    else {
-        j = i->second;
-    }
-    lookup_cache_t::iterator it;
-    it = j->find(string(file_name));
-    if (it != j->end()) {
-        return it->second;
-    }
-    else {
-        //wchar_t s[128];
-        //memset(s, 0, sizeof(s));
-        //Utf8::fUtf8ToUnicode(s, file_name);
-        //log_(L"_lookup_cache MISS for (%s)\n", s);
-
-        wstring* res = _have_trophy_file(file_name);
-        j->insert(pair<string,wstring*>(string(file_name),res));
-        return res;
-    }
+    return NULL;
 }
 
 DWORD lcpk_get_file_info(struct FILE_INFO* file_info)
@@ -1167,9 +1255,9 @@ DWORD lcpk_get_file_info(struct FILE_INFO* file_info)
     char *replacement = filename + len + 1;
     filename = (replacement[0]!='\0') ? replacement : filename;
 
-    wstring *fn = NULL;
-    fn = have_trophy_file(filename);
-    fn = (fn != NULL) ? fn : have_live_file(filename);
+    wstring *fn;
+    fn = have_content(filename);
+    fn = (fn) ? fn : have_live_file(filename);
 
     if (fn != NULL) {
         DWORD size = 0;
@@ -1309,9 +1397,9 @@ DWORD lcpk_before_read(struct READ_STRUCT* rs)
                 rs->offset + rs->bufferOffset, rs->sizeRead);
         }
 
-        wstring *fn = NULL;
-        fn = have_trophy_file(rs->filename);
-        fn = (fn != NULL) ? fn : have_live_file(rs->filename);
+        wstring *fn;
+        fn = have_content(rs->filename);
+        fn = (fn) ? fn : have_live_file(rs->filename);
         if (fn != NULL) {
             HANDLE handle;
             handle = CreateFileW(fn->c_str(),         // file to open
@@ -1370,8 +1458,8 @@ DWORD lcpk_lookup_file(char *filename, struct CPK_INFO* cpk_info)
     char tmp[256];
     if (cpk_info && cpk_info->cpk_filename) {
         wstring *fn;
-        fn = have_trophy_file(filename);
-        fn = (fn != NULL) ? fn : have_live_file(filename);
+        fn = have_content(filename);
+        fn = (fn) ? fn : have_live_file(filename);
         if (fn != NULL) {
             if (memcmp(cpk_info->cpk_filename + 7, "dt36_win", 8)==0) {
                 // replace with a known original filename
@@ -1529,6 +1617,8 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
             if (_is_game) {
                 log_(L"DLL detaching from (%s).\n", module_filename);
                 log_(L"Unmapping from PES.\n");
+
+                if (L) { lua_close(L); }
 
                 DWORD oldProtection;
                 DWORD newProtection = PAGE_EXECUTE_READWRITE;
