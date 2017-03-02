@@ -19,6 +19,7 @@
 using namespace std;
 
 lua_State *L = NULL;
+CRITICAL_SECTION _cs;
 
 static DWORD get_target_addr(DWORD call_location);
 static void hook_call_point(DWORD addr, void* func, int codeShift, int numNops, bool addRetn=false);
@@ -57,11 +58,14 @@ typedef unordered_map<string,wstring*> lookup_cache_t;
 lookup_cache_t _lookup_cache;
 
 struct module_t {
-    bool (*make_key)(char *file_name, char *key);
-    wstring* (*get_filepath)(char *file_name, char *key);
     lookup_cache_t *cache;
+    lua_State* L;
+    int evt_trophy_check;
+    int evt_lcpk_make_key;
+    int evt_lcpk_get_filepath;
 };
 list<module_t*> _modules;
+module_t* _curr_m;
 
 wchar_t module_filename[MAX_PATH];
 wchar_t dll_log[MAX_PATH];
@@ -298,15 +302,14 @@ public:
     wstring _section_name;
     list<wstring> _code_sections;
     list<wstring> _cpk_roots;
-    list<wstring> _trophy_roots;
     list<wstring> _exe_names;
+    list<wstring> _module_names;
     bool _free_select_sides;
     bool _free_first_player;
     bool _cut_scenes;
     int _camera_sliders_max;
     bool _camera_dynamic_wide_angle_enabled;
     bool _black_bars_off;
-    unordered_map<int,int> _trophy_map;
     DWORD _hp_lookup_file;
     DWORD _hp_get_file_info;
     DWORD _hp_before_read;
@@ -349,6 +352,9 @@ public:
             else if (wcscmp(L"code.section", key.c_str())==0) {
                 _code_sections.push_back(value);
             }
+            else if (wcscmp(L"lua.module", key.c_str())==0) {
+                _module_names.push_back(value);
+            }
             else if (wcscmp(L"cpk.root", key.c_str())==0) {
                 if (value[value.size()-1] != L'\\') {
                     value += L'\\';
@@ -360,28 +366,6 @@ public:
                     value += rel;
                 }
                 _cpk_roots.push_back(value);
-            }
-            else if (wcscmp(L"trophy.root", key.c_str())==0) {
-                if (value[value.size()-1] != L'\\') {
-                    value += L'\\';
-                }
-                // handle relative roots
-                if (value[0]==L'.') {
-                    wstring rel(value);
-                    value = sider_dir;
-                    value += rel;
-                }
-                _trophy_roots.push_back(value);
-            }
-            else if (key.find(L"trophy.map.") == 0) {
-                int frm = 0, to = 0;
-                if (swscanf(key.c_str(), L"trophy.map.%d", &frm) == 1) {
-                    to = GetPrivateProfileInt(_section_name.c_str(),
-                        key.c_str(), to, config_ini);
-                    if (frm != 0 && to != 0) {
-                        _trophy_map.insert(std::pair<int,int>(frm,to));
-                    }
-                }
             }
 
             p += wcslen(p) + 1;
@@ -723,37 +707,61 @@ BYTE* find_code_frag(BYTE *base, DWORD max_offset, BYTE *frag, size_t frag_len)
 
 }
 
-bool _install_func(IMAGE_SECTION_HEADER *h);
+static int sider_context_register(lua_State *L)
+{
+    const char *event_key = luaL_checkstring(L, 1);
+    if (!lua_isfunction(L, 2)) {
+        lua_pushstring(L, "second argument must be a function");
+        lua_error(L);
+    }
+    if (strcmp(event_key, "tournament_check_for_trophy")==0) {
+        lua_pushvalue(L, -1);
+        lua_xmove(L, _curr_m->L, 1);
+        _curr_m->evt_trophy_check = lua_gettop(_curr_m->L);
+        logu_("Registered for \"%s\" event\n", event_key);
+    }
+    else if (strcmp(event_key, "livecpk_make_key")==0) {
+        lua_pushvalue(L, -1);
+        lua_xmove(L, _curr_m->L, 1);
+        _curr_m->evt_lcpk_make_key = lua_gettop(_curr_m->L);
+        logu_("Registered for \"%s\" event\n", event_key);
+    }
+    else if (strcmp(event_key, "livecpk_get_filepath")==0) {
+        lua_pushvalue(L, -1);
+        lua_xmove(L, _curr_m->L, 1);
+        _curr_m->evt_lcpk_get_filepath = lua_gettop(_curr_m->L);
+        logu_("Registered for \"%s\" event\n", event_key);
+    }
+    else {
+        logu_("WARN: trying to register for unknown event: \"%s\"\n",
+            event_key);
+    }
+    lua_pop(L, 2);
+    return 0;
+}
 
-DWORD install_func(LPVOID thread_param) {
-    log_(L"DLL attaching to (%s).\n", module_filename);
-    log_(L"Mapped into PES.\n");
-    logu_("Check: Тестовая запись (unconverted).\n");
+static void push_context_table(lua_State *L)
+{
+    lua_newtable(L);
+    lua_newtable(L);
+    lua_setfield(L, -2, "current");
 
-    _is_game = true;
+    char *sdir = (char*)Utf8::unicodeToUtf8(sider_dir);
+    lua_pushstring(L, sdir);
+    Utf8::free(sdir);
+    lua_setfield(L, -2, "sider_dir"); 
 
-    // register trophy server
-    module_t *m = new module_t();
-    m->make_key = trophy_server_make_key;
-    m->get_filepath = trophy_server_get_filepath;
-    m->cache = new lookup_cache_t();
-    _modules.push_back(m);
+    lua_pushcfunction(L, sider_context_register);
+    lua_setfield(L, -2, "register");
+}
 
-    L = luaL_newstate();
-    luaL_openlibs(L);
-
+static void push_env_table(lua_State *L, const wchar_t *script_name)
+{
     char *sandbox[] = {
         "assert", "table", "pairs", "ipairs",
         "string", "math",
     };
 
-    // test: run zz.lua in sandbox
-    char *fname = (char*)Utf8::unicodeToUtf8(sider_dir);
-    string fn(fname);
-    fn += "zz.lua";
-    luaL_loadfile(L, fn.c_str());
-    Utf8::free(fname);
-    // prep environment:
     lua_newtable(L);
     for (int i=0; i<sizeof(sandbox)/sizeof(char*); i++) {
         lua_pushstring(L, sandbox[i]);
@@ -765,18 +773,22 @@ DWORD install_func(LPVOID thread_param) {
     lua_pushcclosure(L, sider_log, 1);
     lua_settable(L, -3);
     lua_pushstring(L, "_FILE");
-    lua_pushstring(L, "zz.lua");
+    char *sname = (char*)Utf8::unicodeToUtf8(script_name);
+    lua_pushstring(L, sname);
+    Utf8::free(sname);
     lua_settable(L, -3);
-    // set _ENV
-    const char *name = lua_setupvalue(L, -2, 1);
-    logu_("Set upvalue: %s\n", name);
-    // run chunk
-    if (lua_pcall(L, 0, 0, 0) != LUA_OK) {
-        char *err = strdup(lua_tostring(L, -1));
-        lua_pop(L, 1);
-        logu_("Lua script problem: %s\n", err);
-        free(err);
-    }
+}
+
+bool _install_func(IMAGE_SECTION_HEADER *h);
+
+DWORD install_func(LPVOID thread_param) {
+    log_(L"DLL attaching to (%s).\n", module_filename);
+    log_(L"Mapped into PES.\n");
+    logu_("Check: Тестовая запись (unconverted).\n");
+
+    _is_game = true;
+
+    InitializeCriticalSection(&_cs);
 
     log_(L"debug = %d\n", _config->_debug);
     log_(L"livecpk.enabled = %d\n", _config->_livecpk_enabled);
@@ -788,15 +800,115 @@ DWORD install_func(LPVOID thread_param) {
             it++) {
         log_(L"Using cpk.root: %s\n", it->c_str());
     }
-    for (list<wstring>::iterator it = _config->_trophy_roots.begin();
-            it != _config->_trophy_roots.end();
-            it++) {
-        log_(L"Using trophy.root: %s\n", it->c_str());
-    }
 
     if (_config->_code_sections.size() == 0) {
         log_(L"No code sections specified in config: nothing to do then.");
         return 0;
+    }
+
+
+    // load and initialize lua modules
+    L = luaL_newstate();
+    luaL_openlibs(L);
+
+    // prepare context table
+    push_context_table(L);
+
+    // load registered modules
+    for (list<wstring>::iterator it = _config->_module_names.begin();
+            it != _config->_module_names.end();
+            it++) {
+        // Use Win32 API to read the script into a buffer:
+        // we do not want any nasty surprises with filename encodings
+        wstring script_file(sider_dir);
+        script_file += L"modules\\";
+        script_file += it->c_str();
+
+        DWORD size = 0;
+        HANDLE handle;
+        handle = CreateFileW(
+            script_file.c_str(),   // file to open
+            GENERIC_READ,          // open for reading
+            FILE_SHARE_READ,       // share for reading
+            NULL,                  // default security
+            OPEN_EXISTING,         // existing file only
+            FILE_ATTRIBUTE_NORMAL, // normal file
+            NULL);                 // no attr. template
+
+        if (handle == INVALID_HANDLE_VALUE)
+        {
+            log_(L"PROBLEM: Unable to load lua module: %s\n", it->c_str());
+            continue;
+        }
+            
+        size = GetFileSize(handle, NULL);
+        BYTE *buf = new BYTE[size+1];
+        memset(buf, 0, size+1);
+        DWORD bytesRead = 0;
+        if (!ReadFile(handle, buf, size, &bytesRead, NULL)) {
+            log_(L"PROBLEM: ReadFile error for lua module: %s\n", it->c_str());
+            CloseHandle(handle);
+            continue;
+        }
+        CloseHandle(handle);
+        // script is now in memory
+
+        char *mfilename = (char*)Utf8::unicodeToUtf8(it->c_str());
+        string mfile(mfilename);
+        Utf8::free(mfilename);
+        luaL_loadbuffer(L, (const char*)buf, size, mfile.c_str());
+        delete buf;
+
+        // set _ENV
+        push_env_table(L, it->c_str());
+        const char *name = lua_setupvalue(L, -2, 1);
+        logu_("Set upvalue: %s\n", name);
+
+        // run the module
+        if (lua_pcall(L, 0, 1, 0) != LUA_OK) {
+            char *err = strdup(lua_tostring(L, -1));
+            lua_pop(L, 1);
+            logu_("Lua module loading problem: %s\n", err);
+            free(err);
+        }
+
+        // check that module chunk is correctly constructed:
+        // it must return a table 
+        if (!lua_istable(L, -1)) {
+            logu_("PROBLEM: Lua module (%s) must return a table. "
+                  "Skipping it\n", mfile.c_str());
+            continue;
+        }
+
+        // now we have module table on the stack 
+        // run its "init" method, with a context object
+        lua_getfield(L, -1, "init");
+        if (!lua_isfunction(L, -1)) {
+            logu_("PROBLEM: Lua module (%s) does not have \"init\" function. "
+                  "Skipping it.\n", mfile.c_str());
+            continue;
+        }
+
+        module_t *m = new module_t();
+        memset(m, 0, sizeof(module_t));
+        m->cache = new lookup_cache_t();
+        m->L = luaL_newstate();
+        _curr_m = m;
+
+        lua_pushvalue(L, -3); // ctx
+        if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
+            char *err = strdup(lua_tostring(L, -1));
+            lua_pop(L, 1);
+            logu_("Lua module init problem: %s\n", err);
+            free(err);
+        }
+        else {
+            logu_("gettop: %d\n", lua_gettop(L));
+            logu_("Lua module initialized: %s\n", mfile.c_str());
+
+            // add to list of loaded modules
+            _modules.push_back(m);
+        }
     }
 
     list<wstring>::iterator it = _config->_code_sections.begin();
@@ -852,7 +964,7 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
         }
     }
 
-    if (_config->_trophy_map.size() > 0) {
+    {
         BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
             trophy_pattern, sizeof(trophy_pattern)-1);
         if (!p) {
@@ -1176,73 +1288,109 @@ bool file_exists(wstring *fullpath)
     return false;
 }
 
+void module_make_key(module_t *m, const char *file_name, char *key)
+{
+    if (m->evt_lcpk_make_key != 0) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(m->L, m->evt_lcpk_make_key);
+        lua_xmove(m->L, L, 1);
+        // push params
+        lua_pushvalue(L, 0); // ctx
+        lua_pushstring(L, file_name);
+        if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
+            char *err = strdup(luaL_checkstring(L, -1));
+            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
+            lua_pop(L, 1);
+            free(err);
+        }
+        else if (lua_isstring(L, -1)) {
+            char *s = strdup(luaL_checkstring(L, -1));
+            lua_pop(L, 1);
+            strcpy(key, s);
+            free(s);
+        }
+        LeaveCriticalSection(&_cs);
+    }
+    else {
+        // assume filename is a key
+        strcpy(key, file_name);
+    }
+}
+
+wstring *module_get_filepath(module_t *m, const char *file_name, char *key)
+{
+    wstring *res = NULL;
+    if (m->evt_lcpk_get_filepath != 0) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(m->L, m->evt_lcpk_get_filepath);
+        lua_xmove(m->L, L, 1);
+        // push params
+        lua_pushvalue(L, 0); // ctx
+        lua_pushstring(L, file_name);
+        lua_pushstring(L, key);
+        if (lua_pcall(L, 3, 1, 0) != LUA_OK) {
+            char *err = strdup(luaL_checkstring(L, -1));
+            logu_("[%d] lua ERROR: %s\n",
+                GetCurrentThreadId(), err);
+            lua_pop(L, 1);
+            free(err);
+        }
+        else if (lua_isstring(L, -1)) {
+            char *s = strdup(luaL_checkstring(L, -1));
+            lua_pop(L, 1);
+            wchar_t *ws = Utf8::utf8ToUnicode((BYTE*)s);
+            res = new wstring(ws);
+            Utf8::free(ws);
+            free(s);
+        }
+        LeaveCriticalSection(&_cs);
+
+        // verify that file exists
+        if (res && !file_exists(res)) {
+            delete res;
+            res = NULL;
+        }
+    }
+    return res;
+}
+
 wstring* have_content(char *file_name)
 {
     char key[512];
     list<module_t*>::iterator i;
     for (i = _modules.begin(); i != _modules.end(); i++) {
         module_t *m = *i;
-        if (!m->make_key || !m->get_filepath) {
-            // this module does not do lcpk operations:
-            // move on to next module
-            continue;
-        }
-        if (m->make_key(file_name, key)) {
-            if (_config->_lookup_cache_enabled) {
-                unordered_map<string,wstring*>::iterator j;
-                j = m->cache->find(key);
-                if (j != m->cache->end()) {
-                    if (j->second != NULL) {
-                        return j->second;
-                    }
-                    // this module does not have the file:
-                    // move on to next module
-                    continue;
+        module_make_key(m, file_name, key);
+               
+        if (_config->_lookup_cache_enabled) {
+            unordered_map<string,wstring*>::iterator j;
+            j = m->cache->find(key);
+            if (j != m->cache->end()) {
+                if (j->second != NULL) {
+                    return j->second;
                 }
-                else {
-                    // cache the lookup result
-                    wstring *res = m->get_filepath(file_name, key);
-                    m->cache->insert(pair<string,wstring*>(key, res));
-                    if (res) {
-                        // we have a file: stop and return
-                        return res;
-                    }
-                }
+                // this module does not have the file:
+                // move on to next module
+                continue;
             }
             else {
-                // no cache: SLOW! ONLY use for troubleshooting
-                wstring *res = m->get_filepath(file_name, key);
+                wstring *res = module_get_filepath(m, file_name, key);
+
+                // cache the lookup result
+                m->cache->insert(pair<string,wstring*>(key, res));
                 if (res) {
                     // we have a file: stop and return
                     return res;
                 }
             }
         }
-    }
-    return NULL;
-}
-
-bool trophy_server_make_key(char *file_name, char *key)
-{
-    sprintf(key, "%d:%s", _curr_tournament_id, file_name);
-    return true;
-}
-
-wstring *trophy_server_get_filepath(char *file_name, char *key)
-{
-    if (!_replace_trophy) {
-        return NULL;
-    }
-    list<wstring>::iterator i = _config->_trophy_roots.begin();
-    for (; i != _config->_trophy_roots.end(); i++) {
-        wchar_t *ufn = Utf8::utf8ToUnicode((BYTE*)file_name);
-        wchar_t tmp[512];
-        memset(tmp, 0, sizeof(tmp));
-        swprintf(tmp, L"%s%d\\%s", i->c_str(), _curr_tournament_id, ufn);
-        wstring *res = new wstring(tmp);
-        Utf8::free(ufn);
-        if (file_exists(res)) {
-            return res;
+        else {
+            // no cache: SLOW! ONLY use for troubleshooting
+            wstring *res = module_get_filepath(m, file_name, key);
+            if (res) {
+                // we have a file: stop and return
+                return res;
+            }
         }
     }
     return NULL;
@@ -1516,19 +1664,36 @@ void lcpk_lookup_file_cp()
 
 DWORD trophy_map(DWORD tournament_id)
 {
-    log_(L"trophy_map:: tournament_id: %d (%08x)\n",
-        tournament_id, tournament_id);
-    _replace_trophy = false;
-    unordered_map<int,int>::iterator it;
-    it = _config->_trophy_map.find(tournament_id);
-    if (it != _config->_trophy_map.end()) {
-        log_(L"trophy_map:: switching trophy: %d (%08x) --> %d (%08x)\n",
-            tournament_id, tournament_id, it->second, it->second);
-        _curr_tournament_id = tournament_id;
-        tournament_id = it->second;
-        _replace_trophy = true;
+    DWORD res = tournament_id;
+    for (list<module_t*>::iterator it = _modules.begin();
+            it != _modules.end();
+            it++) {
+        module_t *m = *it;
+        if (m->evt_trophy_check != 0) {
+            EnterCriticalSection(&_cs);
+            lua_pushvalue(m->L, m->evt_trophy_check);
+            lua_xmove(m->L, L, 1);
+            // push params
+            lua_pushvalue(L, 0); // ctx
+            lua_pushinteger(L, tournament_id);
+            if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
+                char *err = strdup(luaL_checkstring(L, -1));
+                logu_("[%d] lua ERROR: %s\n",
+                    GetCurrentThreadId(), err);
+                lua_pop(L, 1);
+                free(err);
+            }
+            else if (lua_isnumber(L, -1)) {
+                res = (DWORD)luaL_checkint(L, -1);
+                lua_pop(L, 1);
+                LeaveCriticalSection(&_cs);
+                break;
+            }
+            LeaveCriticalSection(&_cs);
+        }
     }
-    return tournament_id;
+
+    return res;
 }
 
 void trophy_map_cp()
@@ -1619,6 +1784,7 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
                 log_(L"Unmapping from PES.\n");
 
                 if (L) { lua_close(L); }
+                DeleteCriticalSection(&_cs);
 
                 DWORD oldProtection;
                 DWORD newProtection = PAGE_EXECUTE_READWRITE;
