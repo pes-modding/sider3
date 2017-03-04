@@ -21,9 +21,9 @@ LFLAGS=/NOLOGO
 LIBS=user32.lib gdi32.lib comctl32.lib version.lib
 LIBSDLL=pngdib.obj libpng.a zdll.lib $(LIBS)
 
-LUAINC=/I soft\lua-5.2.4\src
-LUALIBPATH=soft\lua-5.2.4\src
-LUALIB=lua52.lib
+LUAINC=/I soft\LuaJIT-2.0.4\src
+LUALIBPATH=soft\LuaJIT-2.0.4\src
+LUALIB=lua51.lib
 
 all: sider.exe sider.dll
 
@@ -36,7 +36,7 @@ imageutil.obj: imageutil.cpp
 version.obj: version.cpp
 
 $(LUALIBPATH)\$(LUALIB):
-	cd $(LUALIBPATH) && $(MAKE) generic
+	cd $(LUALIBPATH) && msvcbuild.bat
 
 sider.obj: sider.cpp sider.h
 sider.dll: sider.obj imageutil.obj version.obj sider.res $(LUALIBPATH)\$(LUALIB)
@@ -56,5 +56,5 @@ clean:
 	del *.obj *.dll *.exp *.res *.lib *.exe *~
 
 clean-all: clean
-    cd $(LUALIBPATH) && $(MAKE) clean
+    cd $(LUALIBPATH) && del /Q lua51.exp lua51.lib lua51.dll luajit.exe
 
