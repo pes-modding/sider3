@@ -14,6 +14,10 @@
 #include "lauxlib.h"
 #include "lualib.h"
 
+#ifndef LUA_OK
+#define LUA_OK 0
+#endif
+
 #define DBG if (_config->_debug)
 
 using namespace std;
@@ -759,7 +763,7 @@ static void push_env_table(lua_State *L, const wchar_t *script_name)
 {
     char *sandbox[] = {
         "assert", "table", "pairs", "ipairs",
-        "string", "math",
+        "string", "math", "tonumber", "tostring"
     };
 
     lua_newtable(L);
@@ -856,20 +860,27 @@ DWORD install_func(LPVOID thread_param) {
         char *mfilename = (char*)Utf8::unicodeToUtf8(it->c_str());
         string mfile(mfilename);
         Utf8::free(mfilename);
-        luaL_loadbuffer(L, (const char*)buf, size, mfile.c_str());
+        int r = luaL_loadbuffer(L, (const char*)buf, size, mfile.c_str());
         delete buf;
+        if (r != 0) {
+            const char *err = lua_tostring(L, -1);
+            logu_("Lua module loading problem: %s. "
+                  "Skipping it\n", err);
+            lua_pop(L, 1);
+            continue;
+        }
 
-        // set _ENV
+        // set environment
         push_env_table(L, it->c_str());
-        const char *name = lua_setupvalue(L, -2, 1);
-        logu_("Set upvalue: %s\n", name);
+        lua_setfenv(L, -2);
 
         // run the module
         if (lua_pcall(L, 0, 1, 0) != LUA_OK) {
-            char *err = strdup(lua_tostring(L, -1));
+            const char *err = lua_tostring(L, -1);
+            logu_("Lua module initializing problem: %s. "
+                  "Skipping it\n", err);
             lua_pop(L, 1);
-            logu_("Lua module loading problem: %s\n", err);
-            free(err);
+            continue;
         }
 
         // check that module chunk is correctly constructed:
@@ -877,6 +888,7 @@ DWORD install_func(LPVOID thread_param) {
         if (!lua_istable(L, -1)) {
             logu_("PROBLEM: Lua module (%s) must return a table. "
                   "Skipping it\n", mfile.c_str());
+            lua_pop(L, 1);
             continue;
         }
 
@@ -886,6 +898,7 @@ DWORD install_func(LPVOID thread_param) {
         if (!lua_isfunction(L, -1)) {
             logu_("PROBLEM: Lua module (%s) does not have \"init\" function. "
                   "Skipping it.\n", mfile.c_str());
+            lua_pop(L, 1);
             continue;
         }
 
@@ -895,16 +908,15 @@ DWORD install_func(LPVOID thread_param) {
         m->L = luaL_newstate();
         _curr_m = m;
 
-        lua_pushvalue(L, -3); // ctx
+        lua_pushvalue(L, 1); // ctx
         if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
-            char *err = strdup(lua_tostring(L, -1));
-            lua_pop(L, 1);
+            const char *err = strdup(lua_tostring(L, -1));
             logu_("Lua module init problem: %s\n", err);
-            free(err);
+            lua_pop(L, 1);
         }
         else {
-            logu_("gettop: %d\n", lua_gettop(L));
             logu_("Lua module initialized: %s\n", mfile.c_str());
+            logu_("gettop: %d\n", lua_gettop(L));
 
             // add to list of loaded modules
             _modules.push_back(m);
@@ -1295,20 +1307,21 @@ void module_make_key(module_t *m, const char *file_name, char *key)
         lua_pushvalue(m->L, m->evt_lcpk_make_key);
         lua_xmove(m->L, L, 1);
         // push params
-        lua_pushvalue(L, 0); // ctx
+        lua_pushvalue(L, 1); // ctx
         lua_pushstring(L, file_name);
         if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
-            char *err = strdup(luaL_checkstring(L, -1));
+            const char *err = luaL_checkstring(L, -1);
             logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
-            lua_pop(L, 1);
-            free(err);
         }
         else if (lua_isstring(L, -1)) {
-            char *s = strdup(luaL_checkstring(L, -1));
-            lua_pop(L, 1);
+            const char *s = luaL_checkstring(L, -1);
             strcpy(key, s);
-            free(s);
         }
+        else {
+            // signal empty key
+            key[0] = '\0';
+        }
+        lua_pop(L, 1);
         LeaveCriticalSection(&_cs);
     }
     else {
@@ -1325,24 +1338,21 @@ wstring *module_get_filepath(module_t *m, const char *file_name, char *key)
         lua_pushvalue(m->L, m->evt_lcpk_get_filepath);
         lua_xmove(m->L, L, 1);
         // push params
-        lua_pushvalue(L, 0); // ctx
+        lua_pushvalue(L, 1); // ctx
         lua_pushstring(L, file_name);
-        lua_pushstring(L, key);
+        lua_pushstring(L, (key[0]=='\0') ? NULL : key);
         if (lua_pcall(L, 3, 1, 0) != LUA_OK) {
-            char *err = strdup(luaL_checkstring(L, -1));
+            const char *err = luaL_checkstring(L, -1);
             logu_("[%d] lua ERROR: %s\n",
                 GetCurrentThreadId(), err);
-            lua_pop(L, 1);
-            free(err);
         }
         else if (lua_isstring(L, -1)) {
-            char *s = strdup(luaL_checkstring(L, -1));
-            lua_pop(L, 1);
+            const char *s = luaL_checkstring(L, -1);
             wchar_t *ws = Utf8::utf8ToUnicode((BYTE*)s);
             res = new wstring(ws);
             Utf8::free(ws);
-            free(s);
         }
+        lua_pop(L, 1);
         LeaveCriticalSection(&_cs);
 
         // verify that file exists
@@ -1670,26 +1680,27 @@ DWORD trophy_map(DWORD tournament_id)
             it++) {
         module_t *m = *it;
         if (m->evt_trophy_check != 0) {
+            bool done(false);
             EnterCriticalSection(&_cs);
             lua_pushvalue(m->L, m->evt_trophy_check);
             lua_xmove(m->L, L, 1);
             // push params
-            lua_pushvalue(L, 0); // ctx
+            lua_pushvalue(L, 1); // ctx
             lua_pushinteger(L, tournament_id);
             if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
-                char *err = strdup(luaL_checkstring(L, -1));
+                const char *err = luaL_checkstring(L, -1);
                 logu_("[%d] lua ERROR: %s\n",
                     GetCurrentThreadId(), err);
-                lua_pop(L, 1);
-                free(err);
             }
             else if (lua_isnumber(L, -1)) {
                 res = (DWORD)luaL_checkint(L, -1);
-                lua_pop(L, 1);
-                LeaveCriticalSection(&_cs);
+                done = true;
+            }
+            lua_pop(L, 1);
+            LeaveCriticalSection(&_cs);
+            if (done) {
                 break;
             }
-            LeaveCriticalSection(&_cs);
         }
     }
 
