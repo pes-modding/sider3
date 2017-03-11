@@ -34,6 +34,9 @@ void lcpk_before_read_cp();
 
 void trophy_map_cp();
 
+void team_ids_read_cp();
+void team_info_write_cp();
+
 int _curr_tournament_id(0);
 bool _replace_trophy(false);
 
@@ -67,6 +70,7 @@ struct module_t {
     int evt_trophy_check;
     int evt_lcpk_make_key;
     int evt_lcpk_get_filepath;
+    int evt_lcpk_rewrite;
 };
 list<module_t*> _modules;
 module_t* _curr_m;
@@ -140,6 +144,12 @@ static DWORD _lookup_file_org = 0;
 // original call destination of "before_read"
 static DWORD _before_read_org = 0;
 
+// original call destination of "team_ids_read"
+static DWORD _team_ids_read_org = 0;
+
+// original call destination of "team_info_write"
+static DWORD _team_info_write_org = 0;
+
 bool _is_game(false);
 bool _is_sider(false);
 HANDLE _mh = NULL;
@@ -210,6 +220,26 @@ BYTE trophy_pattern[11] =
     "\x50"
     "\x89\x86\x08\x2c\x00\x00";
 int trophy_offs = 4;
+
+// team ids
+BYTE team_ids_pattern1[14] =
+    "\x81\xe2\xff\x3f\x00\x00"
+    "\x31\x94\xb5\xc8\xff\xff\xff";
+int team_ids_off1 = 0x38;
+
+BYTE team_ids_pattern2[18] =
+    "\x81\xc7\x48\x02\x00\x00"
+    "\xb9\x0b\x00\x00\x00"
+    "\x8d\xb5\xa0\xff\xff\xff";
+int team_ids_off2 = 0x22;
+
+/*
+BYTE team_ids_pattern2[] =
+    "\x66\x89\x86\xf8\x01\x00\x00"
+    "\x89\x8e\xfc\x01\x00\x00"
+    "\x66\x89\x53\x2c";
+int team_ids_off2 = -8;
+*/
 
 bool patched(false);
 bool patched2(false);
@@ -716,7 +746,7 @@ static int sider_context_register(lua_State *L)
     const char *event_key = luaL_checkstring(L, 1);
     if (!lua_isfunction(L, 2)) {
         lua_pushstring(L, "second argument must be a function");
-        lua_error(L);
+        return lua_error(L);
     }
     if (strcmp(event_key, "tournament_check_for_trophy")==0) {
         lua_pushvalue(L, -1);
@@ -734,6 +764,12 @@ static int sider_context_register(lua_State *L)
         lua_pushvalue(L, -1);
         lua_xmove(L, _curr_m->L, 1);
         _curr_m->evt_lcpk_get_filepath = lua_gettop(_curr_m->L);
+        logu_("Registered for \"%s\" event\n", event_key);
+    }
+    else if (strcmp(event_key, "livecpk_rewrite")==0) {
+        lua_pushvalue(L, -1);
+        lua_xmove(L, _curr_m->L, 1);
+        _curr_m->evt_lcpk_rewrite = lua_gettop(_curr_m->L);
         logu_("Registered for \"%s\" event\n", event_key);
     }
     else {
@@ -910,8 +946,12 @@ DWORD install_func(LPVOID thread_param) {
 
         lua_pushvalue(L, 1); // ctx
         if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
-            const char *err = strdup(lua_tostring(L, -1));
-            logu_("Lua module init problem: %s\n", err);
+            const char *err = lua_tostring(L, -1);
+            logu_("PROBLEM: Lua module (%s) \"init\" function "
+                  "returned an error: %s\n", mfile.c_str(), err);
+            logu_("Module (%s) is NOT activated\n", mfile.c_str());
+            lua_pop(L, 1);
+            // pop the module table too, since we are not using it
             lua_pop(L, 1);
         }
         else {
@@ -976,6 +1016,7 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
         }
     }
 
+    // trophy check
     {
         BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
             trophy_pattern, sizeof(trophy_pattern)-1);
@@ -988,6 +1029,36 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
 
             log_(L"Enabling trophy map\n");
             hook_call_point((DWORD)p, trophy_map_cp, 6, 1);
+        }
+    }
+
+    // team ids
+    {
+        BYTE *p;
+        p = find_code_frag(base, h->Misc.VirtualSize,
+            team_ids_pattern1, sizeof(team_ids_pattern1)-1);
+        if (!p) {
+            log_(L"Unable to patch: (team ids 1) code pattern not matched\n");
+        }
+        else {
+            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+            p = p + team_ids_off1;
+
+            _team_ids_read_org = get_target_addr((DWORD)p);
+            hook_call_point((DWORD)p, team_ids_read_cp, 6, 0);
+        }
+
+        p = find_code_frag(base, h->Misc.VirtualSize,
+            team_ids_pattern2, sizeof(team_ids_pattern2)-1);
+        if (!p) {
+            log_(L"Unable to patch: (team ids 2) code pattern not matched\n");
+        }
+        else {
+            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+            p = p + team_ids_off2;
+
+            _team_info_write_org = get_target_addr((DWORD)p);
+            hook_call_point((DWORD)p, team_info_write_cp, 6, 0);
         }
     }
 
@@ -1300,11 +1371,11 @@ bool file_exists(wstring *fullpath)
     return false;
 }
 
-void module_make_key(module_t *m, const char *file_name, char *key)
+void module_rewrite(module_t *m, const char *file_name)
 {
-    if (m->evt_lcpk_make_key != 0) {
+    if (m->evt_lcpk_rewrite != 0) {
         EnterCriticalSection(&_cs);
-        lua_pushvalue(m->L, m->evt_lcpk_make_key);
+        lua_pushvalue(m->L, m->evt_lcpk_rewrite);
         lua_xmove(m->L, L, 1);
         // push params
         lua_pushvalue(L, 1); // ctx
@@ -1315,11 +1386,32 @@ void module_make_key(module_t *m, const char *file_name, char *key)
         }
         else if (lua_isstring(L, -1)) {
             const char *s = luaL_checkstring(L, -1);
-            strcpy(key, s);
+            strcpy((char*)file_name, s);
         }
-        else {
-            // signal empty key
-            key[0] = '\0';
+        lua_pop(L, 1);
+        LeaveCriticalSection(&_cs);
+    }
+}
+
+void module_make_key(module_t *m, const char *file_name, char *key)
+{
+    if (m->evt_lcpk_make_key != 0) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(m->L, m->evt_lcpk_make_key);
+        lua_xmove(m->L, L, 1);
+        // set default of empty key:
+        // in case nil is returned, or an error occurs
+        key[0] = '\0';
+        // push params
+        lua_pushvalue(L, 1); // ctx
+        lua_pushstring(L, file_name);
+        if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
+            const char *err = luaL_checkstring(L, -1);
+            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
+        }
+        else if (lua_isstring(L, -1)) {
+            const char *s = luaL_checkstring(L, -1);
+            strcpy(key, s);
         }
         lua_pop(L, 1);
         LeaveCriticalSection(&_cs);
@@ -1362,6 +1454,15 @@ wstring *module_get_filepath(module_t *m, const char *file_name, char *key)
         }
     }
     return res;
+}
+
+void do_rewrite(char *file_name)
+{
+    list<module_t*>::iterator i;
+    for (i = _modules.begin(); i != _modules.end(); i++) {
+        module_t *m = *i;
+        module_rewrite(m, file_name);
+    }
 }
 
 wstring* have_content(char *file_name)
@@ -1414,6 +1515,7 @@ DWORD lcpk_get_file_info(struct FILE_INFO* file_info)
     filename = (replacement[0]!='\0') ? replacement : filename;
 
     wstring *fn;
+    do_rewrite(filename);
     fn = have_content(filename);
     fn = (fn) ? fn : have_live_file(filename);
 
@@ -1556,6 +1658,7 @@ DWORD lcpk_before_read(struct READ_STRUCT* rs)
         }
 
         wstring *fn;
+        do_rewrite(rs->filename);
         fn = have_content(rs->filename);
         fn = (fn) ? fn : have_live_file(rs->filename);
         if (fn != NULL) {
@@ -1616,6 +1719,7 @@ DWORD lcpk_lookup_file(char *filename, struct CPK_INFO* cpk_info)
     char tmp[256];
     if (cpk_info && cpk_info->cpk_filename) {
         wstring *fn;
+        do_rewrite(filename);
         fn = have_content(filename);
         fn = (fn) ? fn : have_live_file(filename);
         if (fn != NULL) {
@@ -1707,6 +1811,15 @@ DWORD trophy_map(DWORD tournament_id)
     return res;
 }
 
+void set_context_field_int(const char *name, int value)
+{
+    EnterCriticalSection(&_cs);
+    lua_pushvalue(L, 1); // ctx
+    lua_pushinteger(L, value);
+    lua_setfield(L, -2, name);
+    LeaveCriticalSection(&_cs);
+}
+
 void trophy_map_cp()
 {
     __asm {
@@ -1733,6 +1846,95 @@ void trophy_map_cp()
         mov dword ptr ds:[esi+0x2c08], eax
         mov dword ptr ss:[esp+4], eax
         retn
+    }
+}
+
+DWORD team_ids_read(DWORD *home_team_id_encoded, DWORD *away_team_id_encoded)
+{
+    DWORD home=0, away=0;
+    if (home_team_id_encoded) {
+        home = ((*home_team_id_encoded) >> 0x0e) & 0xffff;
+        set_context_field_int("home_team", home);
+    }
+    if (away_team_id_encoded) {
+        away = ((*away_team_id_encoded) >> 0x0e) & 0xffff;
+        set_context_field_int("away_team", away);
+    }
+    log_(L"Match teams: HOME=%d, AWAY=%d\n", home, away);
+    return 0;
+}
+
+void team_ids_read_cp()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        pushfd
+        push ebp
+        push eax
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        push eax  // away team-id-encoded
+        push ecx  // home team-id-encoded
+        call team_ids_read
+        add esp,0x08     // pop parameters
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop eax
+        pop ebp
+        popfd
+        jmp _team_ids_read_org // jump to original target
+    }
+}
+
+DWORD team_info_write(DWORD team_id_encoded, DWORD is_away)
+{
+    DWORD team_id = (team_id_encoded >> 0x0e) & 0xffff;
+    if (is_away) {
+        log_(L"Exhibition AWAY team: %d\n", team_id);
+        set_context_field_int("away_team", team_id);
+    }
+    else {
+        log_(L"Exhibition HOME team: %d\n", team_id);
+        set_context_field_int("home_team", team_id);
+    }
+    return 0;
+}
+
+void team_info_write_cp()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        pushfd
+        push ebp
+        push eax
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        push ecx  // home/away flag
+        push edx  // team-id-encoded
+        call team_info_write
+        add esp,0x08     // pop parameters
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop eax
+        pop ebp
+        popfd
+        jmp _team_info_write_org // jump to original target
     }
 }
 

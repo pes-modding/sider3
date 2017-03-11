@@ -7,9 +7,9 @@ using namespace std;
 
 __declspec(dllexport) void get_module_version(HMODULE hmodule, wstring& version)
 {
-    wchar_t full_path[512];
+    wchar_t full_path[MAX_PATH];
     memset(full_path, 0, sizeof(full_path));
-    GetModuleFileName(hmodule, full_path, sizeof(full_path)/sizeof(wchar_t));
+    GetModuleFileName(hmodule, full_path, MAX_PATH);
 
     DWORD info_size = GetFileVersionInfoSize(full_path,NULL);
     if (info_size) {
