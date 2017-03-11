@@ -142,6 +142,7 @@ int APIENTRY WinMain(HINSTANCE hInstance,
 int init()
 {
     wstring version;
+    version.reserve(64);
     get_module_version(NULL,version);
     start_log_(L"Sider: version %s\n", version.c_str());
     setHook();
