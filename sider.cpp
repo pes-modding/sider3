@@ -332,6 +332,7 @@ public:
     bool _debug;
     bool _livecpk_enabled;
     bool _lookup_cache_enabled;
+    bool _lua_enabled;
     int _dll_mapping_option;
     wstring _section_name;
     list<wstring> _code_sections;
@@ -355,6 +356,7 @@ public:
                  _debug(false),
                  _livecpk_enabled(false),
                  _lookup_cache_enabled(true),
+                 _lua_enabled(true),
                  _dll_mapping_option(0),
                  _free_select_sides(false),
                  _free_first_player(false),
@@ -417,6 +419,10 @@ public:
             L"lookup-cache.enabled", _lookup_cache_enabled,
             config_ini);
 
+        _lua_enabled = GetPrivateProfileInt(_section_name.c_str(),
+            L"lua.enabled", _lua_enabled,
+            config_ini);
+        
         _dll_mapping_option = GetPrivateProfileInt(_section_name.c_str(),
             L"dll-mapping.option", _dll_mapping_option,
             config_ini);
@@ -833,6 +839,7 @@ DWORD install_func(LPVOID thread_param) {
     log_(L"debug = %d\n", _config->_debug);
     log_(L"livecpk.enabled = %d\n", _config->_livecpk_enabled);
     log_(L"lookup-cache.enabled = %d\n", _config->_lookup_cache_enabled);
+    log_(L"lua.enabled = %d\n", _config->_lua_enabled);
     log_(L"dll-mapping.option = %d\n", _config->_dll_mapping_option);
 
     for (list<wstring>::iterator it = _config->_cpk_roots.begin();
@@ -847,119 +854,125 @@ DWORD install_func(LPVOID thread_param) {
     }
 
 
-    // load and initialize lua modules
-    L = luaL_newstate();
-    luaL_openlibs(L);
+    if (_config->_lua_enabled) {
+        log_(L"Loading lua modules ...\n");
 
-    // prepare context table
-    push_context_table(L);
+        // load and initialize lua modules
+        L = luaL_newstate();
+        luaL_openlibs(L);
 
-    // load registered modules
-    for (list<wstring>::iterator it = _config->_module_names.begin();
-            it != _config->_module_names.end();
-            it++) {
-        // Use Win32 API to read the script into a buffer:
-        // we do not want any nasty surprises with filename encodings
-        wstring script_file(sider_dir);
-        script_file += L"modules\\";
-        script_file += it->c_str();
+        // prepare context table
+        push_context_table(L);
 
-        DWORD size = 0;
-        HANDLE handle;
-        handle = CreateFileW(
-            script_file.c_str(),   // file to open
-            GENERIC_READ,          // open for reading
-            FILE_SHARE_READ,       // share for reading
-            NULL,                  // default security
-            OPEN_EXISTING,         // existing file only
-            FILE_ATTRIBUTE_NORMAL, // normal file
-            NULL);                 // no attr. template
+        // load registered modules
+        for (list<wstring>::iterator it = _config->_module_names.begin();
+                it != _config->_module_names.end();
+                it++) {
+            // Use Win32 API to read the script into a buffer:
+            // we do not want any nasty surprises with filename encodings
+            wstring script_file(sider_dir);
+            script_file += L"modules\\";
+            script_file += it->c_str();
 
-        if (handle == INVALID_HANDLE_VALUE)
-        {
-            log_(L"PROBLEM: Unable to load lua module: %s\n", it->c_str());
-            continue;
-        }
-            
-        size = GetFileSize(handle, NULL);
-        BYTE *buf = new BYTE[size+1];
-        memset(buf, 0, size+1);
-        DWORD bytesRead = 0;
-        if (!ReadFile(handle, buf, size, &bytesRead, NULL)) {
-            log_(L"PROBLEM: ReadFile error for lua module: %s\n", it->c_str());
+            DWORD size = 0;
+            HANDLE handle;
+            handle = CreateFileW(
+                script_file.c_str(),   // file to open
+                GENERIC_READ,          // open for reading
+                FILE_SHARE_READ,       // share for reading
+                NULL,                  // default security
+                OPEN_EXISTING,         // existing file only
+                FILE_ATTRIBUTE_NORMAL, // normal file
+                NULL);                 // no attr. template
+
+            if (handle == INVALID_HANDLE_VALUE)
+            {
+                log_(L"PROBLEM: Unable to load lua module: %s\n", it->c_str());
+                continue;
+            }
+                
+            size = GetFileSize(handle, NULL);
+            BYTE *buf = new BYTE[size+1];
+            memset(buf, 0, size+1);
+            DWORD bytesRead = 0;
+            if (!ReadFile(handle, buf, size, &bytesRead, NULL)) {
+                log_(L"PROBLEM: ReadFile error for lua module: %s\n", 
+                    it->c_str());
+                CloseHandle(handle);
+                continue;
+            }
             CloseHandle(handle);
-            continue;
-        }
-        CloseHandle(handle);
-        // script is now in memory
+            // script is now in memory
 
-        char *mfilename = (char*)Utf8::unicodeToUtf8(it->c_str());
-        string mfile(mfilename);
-        Utf8::free(mfilename);
-        int r = luaL_loadbuffer(L, (const char*)buf, size, mfile.c_str());
-        delete buf;
-        if (r != 0) {
-            const char *err = lua_tostring(L, -1);
-            logu_("Lua module loading problem: %s. "
-                  "Skipping it\n", err);
-            lua_pop(L, 1);
-            continue;
-        }
+            char *mfilename = (char*)Utf8::unicodeToUtf8(it->c_str());
+            string mfile(mfilename);
+            Utf8::free(mfilename);
+            int r = luaL_loadbuffer(L, (const char*)buf, size, mfile.c_str());
+            delete buf;
+            if (r != 0) {
+                const char *err = lua_tostring(L, -1);
+                logu_("Lua module loading problem: %s. "
+                      "Skipping it\n", err);
+                lua_pop(L, 1);
+                continue;
+            }
 
-        // set environment
-        push_env_table(L, it->c_str());
-        lua_setfenv(L, -2);
+            // set environment
+            push_env_table(L, it->c_str());
+            lua_setfenv(L, -2);
 
-        // run the module
-        if (lua_pcall(L, 0, 1, 0) != LUA_OK) {
-            const char *err = lua_tostring(L, -1);
-            logu_("Lua module initializing problem: %s. "
-                  "Skipping it\n", err);
-            lua_pop(L, 1);
-            continue;
-        }
+            // run the module
+            if (lua_pcall(L, 0, 1, 0) != LUA_OK) {
+                const char *err = lua_tostring(L, -1);
+                logu_("Lua module initializing problem: %s. "
+                      "Skipping it\n", err);
+                lua_pop(L, 1);
+                continue;
+            }
 
-        // check that module chunk is correctly constructed:
-        // it must return a table 
-        if (!lua_istable(L, -1)) {
-            logu_("PROBLEM: Lua module (%s) must return a table. "
-                  "Skipping it\n", mfile.c_str());
-            lua_pop(L, 1);
-            continue;
-        }
+            // check that module chunk is correctly constructed:
+            // it must return a table 
+            if (!lua_istable(L, -1)) {
+                logu_("PROBLEM: Lua module (%s) must return a table. "
+                      "Skipping it\n", mfile.c_str());
+                lua_pop(L, 1);
+                continue;
+            }
 
-        // now we have module table on the stack 
-        // run its "init" method, with a context object
-        lua_getfield(L, -1, "init");
-        if (!lua_isfunction(L, -1)) {
-            logu_("PROBLEM: Lua module (%s) does not have \"init\" function. "
-                  "Skipping it.\n", mfile.c_str());
-            lua_pop(L, 1);
-            continue;
-        }
+            // now we have module table on the stack 
+            // run its "init" method, with a context object
+            lua_getfield(L, -1, "init");
+            if (!lua_isfunction(L, -1)) {
+                logu_("PROBLEM: Lua module (%s) does not "
+                      "have \"init\" function. Skipping it.\n", 
+                      mfile.c_str());
+                lua_pop(L, 1);
+                continue;
+            }
 
-        module_t *m = new module_t();
-        memset(m, 0, sizeof(module_t));
-        m->cache = new lookup_cache_t();
-        m->L = luaL_newstate();
-        _curr_m = m;
+            module_t *m = new module_t();
+            memset(m, 0, sizeof(module_t));
+            m->cache = new lookup_cache_t();
+            m->L = luaL_newstate();
+            _curr_m = m;
 
-        lua_pushvalue(L, 1); // ctx
-        if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
-            const char *err = lua_tostring(L, -1);
-            logu_("PROBLEM: Lua module (%s) \"init\" function "
-                  "returned an error: %s\n", mfile.c_str(), err);
-            logu_("Module (%s) is NOT activated\n", mfile.c_str());
-            lua_pop(L, 1);
-            // pop the module table too, since we are not using it
-            lua_pop(L, 1);
-        }
-        else {
-            logu_("Lua module initialized: %s\n", mfile.c_str());
-            logu_("gettop: %d\n", lua_gettop(L));
+            lua_pushvalue(L, 1); // ctx
+            if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
+                const char *err = lua_tostring(L, -1);
+                logu_("PROBLEM: Lua module (%s) \"init\" function "
+                      "returned an error: %s\n", mfile.c_str(), err);
+                logu_("Module (%s) is NOT activated\n", mfile.c_str());
+                lua_pop(L, 1);
+                // pop the module table too, since we are not using it
+                lua_pop(L, 1);
+            }
+            else {
+                logu_("Lua module initialized: %s\n", mfile.c_str());
+                logu_("gettop: %d\n", lua_gettop(L));
 
-            // add to list of loaded modules
-            _modules.push_back(m);
+                // add to list of loaded modules
+                _modules.push_back(m);
+            }
         }
     }
 
@@ -1516,7 +1529,7 @@ DWORD lcpk_get_file_info(struct FILE_INFO* file_info)
 
     wstring *fn;
     do_rewrite(filename);
-    fn = have_content(filename);
+    fn = (_config->_lua_enabled) ? have_content(filename) : NULL;
     fn = (fn) ? fn : have_live_file(filename);
 
     if (fn != NULL) {
@@ -1657,9 +1670,9 @@ DWORD lcpk_before_read(struct READ_STRUCT* rs)
                 rs->offset + rs->bufferOffset, rs->sizeRead);
         }
 
-        wstring *fn;
+        wstring *fn = NULL;
         do_rewrite(rs->filename);
-        fn = have_content(rs->filename);
+        fn = (_config->_lua_enabled) ? have_content(rs->filename) : NULL;
         fn = (fn) ? fn : have_live_file(rs->filename);
         if (fn != NULL) {
             HANDLE handle;
@@ -1720,7 +1733,7 @@ DWORD lcpk_lookup_file(char *filename, struct CPK_INFO* cpk_info)
     if (cpk_info && cpk_info->cpk_filename) {
         wstring *fn;
         do_rewrite(filename);
-        fn = have_content(filename);
+        fn = (_config->_lua_enabled) ? have_content(filename) : NULL;
         fn = (fn) ? fn : have_live_file(filename);
         if (fn != NULL) {
             if (memcmp(cpk_info->cpk_filename + 7, "dt36_win", 8)==0) {
@@ -1779,31 +1792,33 @@ void lcpk_lookup_file_cp()
 DWORD trophy_map(DWORD tournament_id)
 {
     DWORD res = tournament_id;
-    for (list<module_t*>::iterator it = _modules.begin();
-            it != _modules.end();
-            it++) {
-        module_t *m = *it;
-        if (m->evt_trophy_check != 0) {
-            bool done(false);
-            EnterCriticalSection(&_cs);
-            lua_pushvalue(m->L, m->evt_trophy_check);
-            lua_xmove(m->L, L, 1);
-            // push params
-            lua_pushvalue(L, 1); // ctx
-            lua_pushinteger(L, tournament_id);
-            if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
-                const char *err = luaL_checkstring(L, -1);
-                logu_("[%d] lua ERROR: %s\n",
-                    GetCurrentThreadId(), err);
-            }
-            else if (lua_isnumber(L, -1)) {
-                res = (DWORD)luaL_checkint(L, -1);
-                done = true;
-            }
-            lua_pop(L, 1);
-            LeaveCriticalSection(&_cs);
-            if (done) {
-                break;
+    if (_config->_lua_enabled) {
+        for (list<module_t*>::iterator it = _modules.begin();
+                it != _modules.end();
+                it++) {
+            module_t *m = *it;
+            if (m->evt_trophy_check != 0) {
+                bool done(false);
+                EnterCriticalSection(&_cs);
+                lua_pushvalue(m->L, m->evt_trophy_check);
+                lua_xmove(m->L, L, 1);
+                // push params
+                lua_pushvalue(L, 1); // ctx
+                lua_pushinteger(L, tournament_id);
+                if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
+                    const char *err = luaL_checkstring(L, -1);
+                    logu_("[%d] lua ERROR: %s\n",
+                        GetCurrentThreadId(), err);
+                }
+                else if (lua_isnumber(L, -1)) {
+                    res = (DWORD)luaL_checkint(L, -1);
+                    done = true;
+                }
+                lua_pop(L, 1);
+                LeaveCriticalSection(&_cs);
+                if (done) {
+                    break;
+                }
             }
         }
     }
@@ -1813,11 +1828,13 @@ DWORD trophy_map(DWORD tournament_id)
 
 void set_context_field_int(const char *name, int value)
 {
-    EnterCriticalSection(&_cs);
-    lua_pushvalue(L, 1); // ctx
-    lua_pushinteger(L, value);
-    lua_setfield(L, -2, name);
-    LeaveCriticalSection(&_cs);
+    if (_config->_lua_enabled) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(L, 1); // ctx
+        lua_pushinteger(L, value);
+        lua_setfield(L, -2, name);
+        LeaveCriticalSection(&_cs);
+    }
 }
 
 void trophy_map_cp()
