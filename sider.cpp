@@ -71,6 +71,8 @@ struct module_t {
     int evt_lcpk_make_key;
     int evt_lcpk_get_filepath;
     int evt_lcpk_rewrite;
+    int evt_set_home_team;
+    int evt_set_away_team;
 };
 list<module_t*> _modules;
 module_t* _curr_m;
@@ -778,6 +780,18 @@ static int sider_context_register(lua_State *L)
         _curr_m->evt_lcpk_rewrite = lua_gettop(_curr_m->L);
         logu_("Registered for \"%s\" event\n", event_key);
     }
+    else if (strcmp(event_key, "set_home_team")==0) {
+        lua_pushvalue(L, -1);
+        lua_xmove(L, _curr_m->L, 1);
+        _curr_m->evt_set_home_team = lua_gettop(_curr_m->L);
+        logu_("Registered for \"%s\" event\n", event_key);
+    }
+    else if (strcmp(event_key, "set_away_team")==0) {
+        lua_pushvalue(L, -1);
+        lua_xmove(L, _curr_m->L, 1);
+        _curr_m->evt_set_away_team = lua_gettop(_curr_m->L);
+        logu_("Registered for \"%s\" event\n", event_key);
+    }
     else {
         logu_("WARN: trying to register for unknown event: \"%s\"\n",
             event_key);
@@ -1384,26 +1398,63 @@ bool file_exists(wstring *fullpath)
     return false;
 }
 
-void module_rewrite(module_t *m, const char *file_name)
+void module_set_home(module_t *m, DWORD team_id)
 {
-    if (m->evt_lcpk_rewrite != 0) {
+    if (m->evt_set_home_team != 0) {
         EnterCriticalSection(&_cs);
-        lua_pushvalue(m->L, m->evt_lcpk_rewrite);
+        lua_pushvalue(m->L, m->evt_set_home_team);
         lua_xmove(m->L, L, 1);
         // push params
         lua_pushvalue(L, 1); // ctx
-        lua_pushstring(L, file_name);
-        if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
+        lua_pushinteger(L, team_id);
+        if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
             const char *err = luaL_checkstring(L, -1);
             logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
+            lua_pop(L, 1);
         }
-        else if (lua_isstring(L, -1)) {
-            const char *s = luaL_checkstring(L, -1);
-            strcpy((char*)file_name, s);
-        }
-        lua_pop(L, 1);
         LeaveCriticalSection(&_cs);
     }
+}
+
+void module_set_away(module_t *m, DWORD team_id)
+{
+    if (m->evt_set_away_team != 0) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(m->L, m->evt_set_away_team);
+        lua_xmove(m->L, L, 1);
+        // push params
+        lua_pushvalue(L, 1); // ctx
+        lua_pushinteger(L, team_id);
+        if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
+            const char *err = luaL_checkstring(L, -1);
+            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
+            lua_pop(L, 1);
+        }
+        LeaveCriticalSection(&_cs);
+    }
+}
+
+bool module_rewrite(module_t *m, const char *file_name)
+{
+    bool res(false);
+    EnterCriticalSection(&_cs);
+    lua_pushvalue(m->L, m->evt_lcpk_rewrite);
+    lua_xmove(m->L, L, 1);
+    // push params
+    lua_pushvalue(L, 1); // ctx
+    lua_pushstring(L, file_name);
+    if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
+        const char *err = luaL_checkstring(L, -1);
+        logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
+    }
+    else if (lua_isstring(L, -1)) {
+        const char *s = luaL_checkstring(L, -1);
+        strcpy((char*)file_name, s);
+        res = true;
+    }
+    lua_pop(L, 1);
+    LeaveCriticalSection(&_cs);
+    return res;
 }
 
 void module_make_key(module_t *m, const char *file_name, char *key)
@@ -1474,7 +1525,11 @@ void do_rewrite(char *file_name)
     list<module_t*>::iterator i;
     for (i = _modules.begin(); i != _modules.end(); i++) {
         module_t *m = *i;
-        module_rewrite(m, file_name);
+        if (m->evt_lcpk_rewrite != 0) {
+            if (module_rewrite(m, file_name)) {
+                return;
+            }
+        }
     }
 }
 
@@ -1484,6 +1539,11 @@ wstring* have_content(char *file_name)
     list<module_t*>::iterator i;
     for (i = _modules.begin(); i != _modules.end(); i++) {
         module_t *m = *i;
+        if (!m->evt_lcpk_make_key && !m->evt_lcpk_get_filepath) {
+            // neither of callbacks is defined --> nothing to do
+            continue;
+        }
+
         module_make_key(m, file_name, key);
                
         if (_config->_lookup_cache_enabled) {
@@ -1528,7 +1588,7 @@ DWORD lcpk_get_file_info(struct FILE_INFO* file_info)
     filename = (replacement[0]!='\0') ? replacement : filename;
 
     wstring *fn;
-    do_rewrite(filename);
+    if (_config->_lua_enabled) do_rewrite(filename);
     fn = (_config->_lua_enabled) ? have_content(filename) : NULL;
     fn = (fn) ? fn : have_live_file(filename);
 
@@ -1671,7 +1731,7 @@ DWORD lcpk_before_read(struct READ_STRUCT* rs)
         }
 
         wstring *fn = NULL;
-        do_rewrite(rs->filename);
+        if (_config->_lua_enabled) do_rewrite(rs->filename);
         fn = (_config->_lua_enabled) ? have_content(rs->filename) : NULL;
         fn = (fn) ? fn : have_live_file(rs->filename);
         if (fn != NULL) {
@@ -1732,7 +1792,7 @@ DWORD lcpk_lookup_file(char *filename, struct CPK_INFO* cpk_info)
     char tmp[256];
     if (cpk_info && cpk_info->cpk_filename) {
         wstring *fn;
-        do_rewrite(filename);
+        if (_config->_lua_enabled) do_rewrite(filename);
         fn = (_config->_lua_enabled) ? have_content(filename) : NULL;
         fn = (fn) ? fn : have_live_file(filename);
         if (fn != NULL) {
@@ -1877,7 +1937,16 @@ DWORD team_ids_read(DWORD *home_team_id_encoded, DWORD *away_team_id_encoded)
         away = ((*away_team_id_encoded) >> 0x0e) & 0xffff;
         set_context_field_int("away_team", away);
     }
-    log_(L"Match teams: HOME=%d, AWAY=%d\n", home, away);
+    DBG log_(L"Match teams: HOME=%d, AWAY=%d\n", home, away);
+    // lua callbacks
+    if (_config->_lua_enabled) {
+        list<module_t*>::iterator i;
+        for (i = _modules.begin(); i != _modules.end(); i++) {
+            module_t *m = *i;
+            module_set_home(m, home);
+            module_set_away(m, away);
+        }
+    }
     return 0;
 }
 
@@ -1915,12 +1984,25 @@ DWORD team_info_write(DWORD team_id_encoded, DWORD is_away)
 {
     DWORD team_id = (team_id_encoded >> 0x0e) & 0xffff;
     if (is_away) {
-        log_(L"Exhibition AWAY team: %d\n", team_id);
+        DBG log_(L"Exhibition AWAY team: %d\n", team_id);
         set_context_field_int("away_team", team_id);
     }
     else {
-        log_(L"Exhibition HOME team: %d\n", team_id);
+        DBG log_(L"Exhibition HOME team: %d\n", team_id);
         set_context_field_int("home_team", team_id);
+    }
+    // lua callbacks
+    if (_config->_lua_enabled) {
+        list<module_t*>::iterator i;
+        for (i = _modules.begin(); i != _modules.end(); i++) {
+            module_t *m = *i;
+            if (is_away) {
+                module_set_away(m, team_id);
+            }
+            else {
+                module_set_home(m, team_id);
+            }
+        }
     }
     return 0;
 }
