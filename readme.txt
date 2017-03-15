@@ -1,4 +1,4 @@
-Sider v3.2 for Pro Evolution Soccer 2017
+Sider v3.3 for Pro Evolution Soccer 2017
 ========================================
 Copyright (C) 2017 juce, nesa24
 
@@ -125,9 +125,28 @@ Relative paths will be calculated relative to the folder where sider.exe is
 located.
 
 
+lua.enabled = 1
+
+- This turns on/off the scripting support. Extension modules can be
+written in Lua 5.1 (LuaJIT), using a subset of standard libraries and 
+also objects and events provides by sider. See "scripting.txt" file for
+a programmer's guide to writing lua modules for sider.
+
+
+lua.module = "keeper2nd.lua"
+lua.module = "trophy.lua"
+
+- Specifies the order in which the extension modules are loaded. These 
+modules must be in "modules" folder inside the sider root directory.
+
+
+
 CREDITS:
 --------
 Game research by nesa24 and juce
 Sider is written by juce and nesa24
-Test content: EPL High-Visibility ball: by -cRoNoS-
+Test content: 
+EPL High-Visibility ball: by -cRoNoS-
+EPL Trophy and FA Community Shield: by Ronito
+Manchester United green GK kit: by G-Style
 

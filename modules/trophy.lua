@@ -1,10 +1,10 @@
 -- Trophy-server
 -- version 0.2
 
-local fileroot = "c:\\Users\\Anton\\Desktop\\Дурак\\trophy-roots\\test2"
+local fileroot = ".\\content\\trophy-server"
 local switch_map = {
-    [101] = 33,
-    [103] = 33,
+    [39] = 33,     -- English League
+    [101] = 144,   -- English Super Cup
 }
 
 -- current (actual) tournament id

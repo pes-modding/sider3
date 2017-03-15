@@ -1,0 +1,13 @@
+<surfaceShader name="Ball">
+  <technique name="Forward" pass="ball_forward" />
+  <technique name="ShadowMap" pass="simple_shadowmap" />
+  <technique name="PlanerShadow" pass="planershadow" />
+  
+  <sampler name="DiffuseMap" index="0" techniqueMask="15" defaultValue="%SYS_WHITE" />
+  <sampler name="NormalMap" index="1" techniqueMask="7" defaultValue="%SYS_UNIT_NORMAL" />
+  <sampler name="SpecularMap" index="2" techniqueMask="7" defaultValue="%SYS_WHITE" />
+  <sampler name="EnvironmentMap" index="14" techniqueMask="7" defaultValue="%SYS_ENVMAP" />
+
+  <parameter name="Reflection" index="23" x="0.3" techniqueMask="7" shaderMask="2" />
+  <parameter name="Shininess" index="24" x="0.05" w="0.5" techniqueMask="7" shaderMask="2" />
+</surfaceShader>
