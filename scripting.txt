@@ -1,0 +1,13 @@
+Sider 3 Lua module Programmers Guide
+====================================
+
+
+1. Introduction
+
+
+2. Context object
+
+
+3. Supported events
+
+

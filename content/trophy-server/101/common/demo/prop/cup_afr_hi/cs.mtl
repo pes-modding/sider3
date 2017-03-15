@@ -1,0 +1,27 @@
+<materialset>
+    <material name="Model_0" shader="Basic_CNSR">
+        <vector name="Reflection" x="0.8" y="1" z="0" w="0" />
+        <vector name="Shininess" x="0.9" y="0" z="0" w="1.4" />
+        <sampler name="DiffuseMap" path="./cs_clm1.dds" srgb="1" minfilter="anisotropic" magfilter="linear" mipfilter="linear" uaddr="wrap" vaddr="wrap" waddr="wrap" maxaniso="2" />
+        <sampler name="NormalMap" path="./cs_nrm.dds" srgb="0" minfilter="anisotropic" magfilter="linear" mipfilter="linear" uaddr="wrap" vaddr="wrap" waddr="wrap" maxaniso="2" />
+        <state name="alpharef" value="0" />
+        <state name="blendmode" value="0" />
+        <state name="alphablend" value="0" />
+        <state name="alphatest" value="0" />
+        <state name="twosided" value="0" />
+        <state name="ztest" value="1" />
+        <state name="zwrite" value="1" />
+    </material>
+    <material name="Model_1" shader="Basic_CNSR">
+        <vector name="Reflection" x="0" y="0" z="0" w="0" />
+        <vector name="Shininess" x="0" y="0" z="0" w="0" />
+        <sampler name="DiffuseMap" path="./cs_clm1.dds" srgb="1" minfilter="anisotropic" magfilter="linear" mipfilter="linear" uaddr="wrap" vaddr="wrap" waddr="wrap" maxaniso="2" />
+        <state name="alpharef" value="0" />
+        <state name="blendmode" value="0" />
+        <state name="alphablend" value="0" />
+        <state name="alphatest" value="0" />
+        <state name="twosided" value="0" />
+        <state name="ztest" value="1" />
+        <state name="zwrite" value="1" />
+    </material>
+</materialset>

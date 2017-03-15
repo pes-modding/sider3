@@ -1,4 +1,4 @@
--- simple GoalKeeper kit switcher
+-- Another GoalKeeper kit switcher: using rewrite
 
 local function which_gk_model(filename)
     return string.match(
