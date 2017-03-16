@@ -148,5 +148,5 @@ Sider is written by juce and nesa24
 Test content: 
 EPL High-Visibility ball: by -cRoNoS-
 EPL Trophy and FA Community Shield: by Ronito
-Manchester United green GK kit: by G-Style
+Manchester United GK kits: by G-Style
 
