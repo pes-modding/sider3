@@ -1,5 +1,7 @@
 Sider 3 Lua Module Programmers Guide
 ====================================
+For sider.dll version: 3.3.0
+March 16,2017
 
 
 
@@ -8,10 +10,10 @@ Sider 3 Lua Module Programmers Guide
 
 The main idea here is to provide a safe and flexible way to 
 expand Sider functionality. It will (eventually) allow modders to
-tweak many aspects of the game, load all sorts of extra content
+alter many aspects of the game, load all sorts of extra content
 and even do gameplay tweaks. 
 
-Instead of offering a C interface to, where the programmers would need 
+Instead of offering a C interface, where the programmers would need 
 to write a DLL, i'm a taking a different approach here and trying to
 design a system, where expansion modules are written in Lua. A module
 would typically initialize itself by registering for certain events,
@@ -23,14 +25,14 @@ support in games, used all over the gaming industry. Most famous
 example is probably WarCraft.
 
 To boost the performance, Sider uses a just-in-time compiler for Lua 
-called LuaJIT, written by Mike Pall. LuaJIT is a trully brilliant piece
+called LuaJIT, written by Mike Pall. LuaJIT is a truly brilliant piece
 of software. It is 100% compatible with Lua 5.1, and also implements
 some features of Lua 5.2, but more importantly it is blazingly fast,
 often approaching the speed of C code.
-(More information here: https://luajit.org)
+( More information here: https://luajit.org )
 
-After reading this guide, the next step is to study the example
-modules, which are provided with Sider. If you are famil
+After reading this guide, the next step is to study the example (and
+non-example) modules, which are provided with this release of Sider. 
 Find them in the "modules" directory.
 
 
