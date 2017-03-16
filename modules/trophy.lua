@@ -1,10 +1,27 @@
--- Trophy-server
--- version 0.2
+--[[ 
+
+Trophy-server
+version 0.1 by juce
+ 
+The principle of trophy server is as follows:
+
+#1. we temporarily switch the tournament id at the trophy-check event.
+    This allows us to have trophies for those tournaments in the game that
+    are unlicensed and do not have appropriate cut-scenes.
+    (See doc/tournaments.txt file for a list of some tournament ids.)
+
+#2. we use separate content folders for each tournament that we
+    have a trophy for. This way, we can actually fully style the pre-match
+    and post-match scenes to match the tournament, without affecting other
+    tournaments: trophy itself, celebration boards, banners, etc.
+
+--]]
+
 
 local fileroot = ".\\content\\trophy-server"
 local switch_map = {
-    [39] = 33,     -- English League
-    [101] = 144,   -- English Super Cup
+    [39] = 33,     -- 39:  English League
+    [101] = 144,   -- 101: English Super Cup
 }
 
 -- current (actual) tournament id
@@ -18,6 +35,9 @@ local function switch_tournament(ctx, tournament_id)
         log(string.format(
             "switching tournament_id: %d --> %d", tournament_id, rep_id))
     else
+        -- do not switch, but log the tournament id so that
+        -- we can add this information to tournaments.txt and
+        -- eventually have a complete list of ids
         log(string.format("tournament_id: %d", tournament_id))
     end
     return rep_id or tournament_id
@@ -36,8 +56,8 @@ local function get_filepath(ctx, filename, key)
 end
 
 local function init(ctx)
-    log("initializing ...")
     if fileroot:sub(1,1)=='.' then
+        -- assume relative to sider dir
         fileroot = ctx.sider_dir .. fileroot
     end
     log(string.format("fileroot: %s", fileroot))
