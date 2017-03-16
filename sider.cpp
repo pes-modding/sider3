@@ -883,7 +883,7 @@ DWORD install_func(LPVOID thread_param) {
     log_(L"livecpk.enabled = %d\n", _config->_livecpk_enabled);
     log_(L"lookup-cache.enabled = %d\n", _config->_lookup_cache_enabled);
     log_(L"lua.enabled = %d\n", _config->_lua_enabled);
-    log_(L"luajit.ext.enabled = %d\n", _config->_lua_enabled);
+    log_(L"luajit.ext.enabled = %d\n", _config->_luajit_extensions_enabled);
 
     for (list<wstring>::iterator it = _config->_cpk_roots.begin();
             it != _config->_cpk_roots.end();
