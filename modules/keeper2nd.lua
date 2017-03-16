@@ -1,4 +1,5 @@
--- GoalKeeper kit switcher
+-- GoalKeeper kit switcher: switch away GK kit to 2nd
+-- Also, use our content, not LiveCPK/game: keeper-kits is our root
 
 local kitroot = ".\\content\\keeper-kits\\"
 

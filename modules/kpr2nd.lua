@@ -1,4 +1,5 @@
 -- Another GoalKeeper kit switcher: using rewrite
+-- rely on LiveCPK and game content
 
 local function which_gk_model(filename)
     return string.match(
