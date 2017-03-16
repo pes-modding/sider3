@@ -58,6 +58,8 @@ static DWORD hookingThreadId = 0;
 static HMODULE myHDLL;
 static HHOOK handle;
 
+void set_context_field_int(const char *name, int value);
+
 bool trophy_server_make_key(char *file_name, char *key);
 wstring *trophy_server_get_filepath(char *file_name, char *key);
 
@@ -335,6 +337,7 @@ public:
     bool _livecpk_enabled;
     bool _lookup_cache_enabled;
     bool _lua_enabled;
+    bool _luajit_extensions_enabled;
     int _dll_mapping_option;
     wstring _section_name;
     list<wstring> _code_sections;
@@ -359,6 +362,7 @@ public:
                  _livecpk_enabled(false),
                  _lookup_cache_enabled(true),
                  _lua_enabled(true),
+                 _luajit_extensions_enabled(false),
                  _dll_mapping_option(0),
                  _free_select_sides(false),
                  _free_first_player(false),
@@ -423,6 +427,10 @@ public:
 
         _lua_enabled = GetPrivateProfileInt(_section_name.c_str(),
             L"lua.enabled", _lua_enabled,
+            config_ini);
+        
+        _luajit_extensions_enabled = GetPrivateProfileInt(_section_name.c_str(),
+            L"luajit.ext.enabled", _luajit_extensions_enabled,
             config_ini);
         
         _dll_mapping_option = GetPrivateProfileInt(_section_name.c_str(),
@@ -803,8 +811,6 @@ static int sider_context_register(lua_State *L)
 static void push_context_table(lua_State *L)
 {
     lua_newtable(L);
-    lua_newtable(L);
-    lua_setfield(L, -2, "current");
 
     char *sdir = (char*)Utf8::unicodeToUtf8(sider_dir);
     lua_pushstring(L, sdir);
@@ -837,6 +843,29 @@ static void push_env_table(lua_State *L, const wchar_t *script_name)
     lua_pushstring(L, sname);
     Utf8::free(sname);
     lua_settable(L, -3);
+
+    // set _G
+    lua_pushvalue(L, -1);
+    lua_setfield(L, -2, "_G");
+
+    // load some LuaJIT extenstions
+    if (_config->_luajit_extensions_enabled) {
+        char *ext[] = { "ffi", "bit" };
+        for (int i=0; i<sizeof(ext)/sizeof(char*); i++) {
+            lua_getglobal(L, "require");
+            lua_pushstring(L, ext[i]);
+            if (lua_pcall(L, 1, 1, 0) != 0) {
+                const char *err = luaL_checkstring(L, -1);
+                logu_("Problem loading LuaJIT module (%s): %s\n. "
+                      "Skipping it.\n", ext[i], err);
+                lua_pop(L, 1);
+                continue;
+            }
+            else {
+                lua_setfield(L, -2, ext[i]);
+            }
+        }
+    }
 }
 
 bool _install_func(IMAGE_SECTION_HEADER *h);
@@ -844,7 +873,7 @@ bool _install_func(IMAGE_SECTION_HEADER *h);
 DWORD install_func(LPVOID thread_param) {
     log_(L"DLL attaching to (%s).\n", module_filename);
     log_(L"Mapped into PES.\n");
-    logu_("Check: Тестовая запись (unconverted).\n");
+    logu_("UTF-8 check: ленинградское время ноль часов ноль минут.\n");
 
     _is_game = true;
 
@@ -854,7 +883,7 @@ DWORD install_func(LPVOID thread_param) {
     log_(L"livecpk.enabled = %d\n", _config->_livecpk_enabled);
     log_(L"lookup-cache.enabled = %d\n", _config->_lookup_cache_enabled);
     log_(L"lua.enabled = %d\n", _config->_lua_enabled);
-    log_(L"dll-mapping.option = %d\n", _config->_dll_mapping_option);
+    log_(L"luajit.ext.enabled = %d\n", _config->_lua_enabled);
 
     for (list<wstring>::iterator it = _config->_cpk_roots.begin();
             it != _config->_cpk_roots.end();
@@ -869,8 +898,6 @@ DWORD install_func(LPVOID thread_param) {
 
 
     if (_config->_lua_enabled) {
-        log_(L"Loading lua modules ...\n");
-
         // load and initialize lua modules
         L = luaL_newstate();
         luaL_openlibs(L);
@@ -888,6 +915,8 @@ DWORD install_func(LPVOID thread_param) {
             script_file += L"modules\\";
             script_file += it->c_str();
 
+            log_(L"Loading module: %s ...\n", it->c_str());
+
             DWORD size = 0;
             HANDLE handle;
             handle = CreateFileW(
@@ -901,7 +930,8 @@ DWORD install_func(LPVOID thread_param) {
 
             if (handle == INVALID_HANDLE_VALUE)
             {
-                log_(L"PROBLEM: Unable to load lua module: %s\n", it->c_str());
+                log_(L"PROBLEM: Unable to open file: %s\n", 
+                    script_file.c_str());
                 continue;
             }
                 
@@ -981,7 +1011,7 @@ DWORD install_func(LPVOID thread_param) {
                 lua_pop(L, 1);
             }
             else {
-                logu_("Lua module initialized: %s\n", mfile.c_str());
+                logu_("OK: Lua module initialized: %s\n", mfile.c_str());
                 logu_("gettop: %d\n", lua_gettop(L));
 
                 // add to list of loaded modules
@@ -1853,6 +1883,7 @@ DWORD trophy_map(DWORD tournament_id)
 {
     DWORD res = tournament_id;
     if (_config->_lua_enabled) {
+        set_context_field_int("tournament_id", tournament_id);
         for (list<module_t*>::iterator it = _modules.begin();
                 it != _modules.end();
                 it++) {
