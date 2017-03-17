@@ -140,6 +140,16 @@ lua.module = "trophy.lua"
 modules must be in "modules" folder inside the sider root directory.
 
 
+lua.extra-globals = "require,os"
+
+- Allows to load additional standard Lua globals, which are not enabled
+by default. Globals must be all specified in one quoted string, separated
+by commas. One example could be the standard "os" library, because you
+want to find out current timestamp by calling os.time() in your Lua module.
+If you find yourself needing this option, please be careful with how you
+use these extra facilities.
+
+
 
 CREDITS:
 --------

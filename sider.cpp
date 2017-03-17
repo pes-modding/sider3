@@ -338,6 +338,7 @@ public:
     bool _lookup_cache_enabled;
     bool _lua_enabled;
     bool _luajit_extensions_enabled;
+    list<wstring> _lua_extra_globals;
     int _dll_mapping_option;
     wstring _section_name;
     list<wstring> _code_sections;
@@ -396,6 +397,23 @@ public:
             }
             else if (wcscmp(L"lua.module", key.c_str())==0) {
                 _module_names.push_back(value);
+            }
+            else if (wcscmp(L"lua.extra-globals", key.c_str())==0) {
+                bool done(false);
+                int start = 0, end = 0;
+                while (!done) {
+                    end = value.find(L",", start);
+                    done = (end == string::npos);
+
+                    wstring name((done) ?
+                        value.substr(start) :
+                        value.substr(start, end - start));
+                    string_strip_quotes(name);
+                    if (!name.empty()) {
+                        _lua_extra_globals.push_back(name);
+                    }
+                    start = end + 1;
+                }
             }
             else if (wcscmp(L"cpk.root", key.c_str())==0) {
                 if (value[value.size()-1] != L'\\') {
@@ -825,7 +843,8 @@ static void push_env_table(lua_State *L, const wchar_t *script_name)
 {
     char *sandbox[] = {
         "assert", "table", "pairs", "ipairs",
-        "string", "math", "tonumber", "tostring"
+        "string", "math", "tonumber", "tostring",
+        "io", "unpack", "error", "_VERSION", "type",
     };
 
     lua_newtable(L);
@@ -834,6 +853,24 @@ static void push_env_table(lua_State *L, const wchar_t *script_name)
         lua_getglobal(L, sandbox[i]);
         lua_settable(L, -3);
     }
+    // extra globals
+    for (list<wstring>::iterator i = _config->_lua_extra_globals.begin();
+            i != _config->_lua_extra_globals.end();
+            i++) {
+        char *name = (char*)Utf8::unicodeToUtf8(i->c_str());
+        lua_pushstring(L, name);
+        lua_getglobal(L, name);
+        if (lua_isnil(L, -1)) {
+            logu_("WARNING: Unknown Lua global: %s. Skipping it\n",
+                name);
+            lua_pop(L, 2);
+        }
+        else {
+            lua_settable(L, -3);
+        }
+        Utf8::free(name);
+    }
+
     lua_pushstring(L, "log");
     lua_pushvalue(L, -2);  // upvalue for sider_log C-function
     lua_pushcclosure(L, sider_log, 1);
@@ -884,6 +921,12 @@ DWORD install_func(LPVOID thread_param) {
     log_(L"lookup-cache.enabled = %d\n", _config->_lookup_cache_enabled);
     log_(L"lua.enabled = %d\n", _config->_lua_enabled);
     log_(L"luajit.ext.enabled = %d\n", _config->_luajit_extensions_enabled);
+
+    for (list<wstring>::iterator it = _config->_lua_extra_globals.begin();
+            it != _config->_lua_extra_globals.end();
+            it++) {
+        log_(L"Using lua extra global: %s\n", it->c_str());
+    }
 
     for (list<wstring>::iterator it = _config->_cpk_roots.begin();
             it != _config->_cpk_roots.end();
