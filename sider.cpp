@@ -844,7 +844,7 @@ static void push_env_table(lua_State *L, const wchar_t *script_name)
     char *sandbox[] = {
         "assert", "table", "pairs", "ipairs",
         "string", "math", "tonumber", "tostring",
-        "io", "unpack", "error", "_VERSION", "type",
+        "unpack", "error", "_VERSION", "type",
     };
 
     lua_newtable(L);
@@ -853,6 +853,7 @@ static void push_env_table(lua_State *L, const wchar_t *script_name)
         lua_getglobal(L, sandbox[i]);
         lua_settable(L, -3);
     }
+    /* DISABLING FOR NOW, as this is a SECURITY issue
     // extra globals
     for (list<wstring>::iterator i = _config->_lua_extra_globals.begin();
             i != _config->_lua_extra_globals.end();
@@ -870,6 +871,7 @@ static void push_env_table(lua_State *L, const wchar_t *script_name)
         }
         Utf8::free(name);
     }
+    */
 
     lua_pushstring(L, "log");
     lua_pushvalue(L, -2);  // upvalue for sider_log C-function
@@ -922,11 +924,13 @@ DWORD install_func(LPVOID thread_param) {
     log_(L"lua.enabled = %d\n", _config->_lua_enabled);
     log_(L"luajit.ext.enabled = %d\n", _config->_luajit_extensions_enabled);
 
+    /* DISABLING FOR NOW, as this is a SECURITY issue
     for (list<wstring>::iterator it = _config->_lua_extra_globals.begin();
             it != _config->_lua_extra_globals.end();
             it++) {
         log_(L"Using lua extra global: %s\n", it->c_str());
     }
+    */
 
     for (list<wstring>::iterator it = _config->_cpk_roots.begin();
             it != _config->_cpk_roots.end();
