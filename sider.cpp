@@ -42,6 +42,11 @@ void set_defaults_cp();
 void write_exhib_id_cp();
 void write_tournament_id_cp();
 
+// locations to fill, when hooking
+DWORD _tid_addr1 = 0;
+DWORD _tid_target1 = 0;
+DWORD _tid_target2 = 0;
+
 int convert_tournament_id2();
 int convert_tournament_id(int id);
 
@@ -287,6 +292,15 @@ BYTE write_exhib_id_pattern[14] =
     "\x8b\x46\x4c"
     "\x50";
 int write_exhib_id_off = 0x22;
+
+// tid function pattern
+BYTE tid_func_pattern[12] =
+    "\x83\xc0\xda"
+    "\x83\xc4\x04"
+    "\x83\xf8\x3f"
+    "\x77\x14";
+int tid_func_off1 = -5;
+int tid_func_off2 = -0x1c;
 
 bool patched(false);
 bool patched2(false);
@@ -1272,6 +1286,28 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
 
             log_(L"Enabling write-exhib-id event\n");
             hook_call_point((DWORD)p, write_exhib_id_cp, 6, 2);
+        }
+    }
+
+    // fill in _tid* locations
+    {
+        BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
+            tid_func_pattern, sizeof(tid_func_pattern)-1);
+        if (!p) {
+            log_(L"Unable to match: (tid-func) code pattern not matched\n");
+        }
+        else {
+            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+
+            // #1
+            _tid_target1 = get_target_addr((DWORD)(p + tid_func_off1));
+            _tid_target2 = (DWORD)(p + tid_func_off2);
+            DWORD loc = get_target_addr(_tid_target2);
+            _tid_addr1 = *(DWORD*)(loc + 1);
+
+            log_(L"_tid_addr1: %p\n", _tid_addr1);
+            log_(L"_tid_target1: %p\n", _tid_target1);
+            log_(L"_tid_target2: %p\n", _tid_target2);
         }
     }
 
@@ -2283,14 +2319,14 @@ void minutes_set_cp()
 
 int convert_tournament_id2()
 {
-    // [[26711b8]+34]+0x537b8
-    BYTE *p = *(BYTE**)0x26711b8;
+    // [[26711b8]+0x34]+0x537b8 : for v1.04
+    BYTE *p = *(BYTE**)_tid_addr1;
     if (p) {
         p = *(BYTE**)(p+0x34);
         if (p) {
             p = p + 0x537b8;
             DWORD res = -1;
-            int target = 0x42982db;
+            int target = _tid_target2;
             __asm {
                 call target
                 mov res,eax
@@ -2303,8 +2339,8 @@ int convert_tournament_id2()
 
 int convert_tournament_id(int id)
 {
-    // [[26711b8]+34]+0x537b8
-    BYTE *p = *(BYTE**)0x26711b8;
+    // [[26711b8]+0x34]+0x537b8  : for v1.04
+    BYTE *p = *(BYTE**)_tid_addr1;
     if (p) {
         p = *(BYTE**)(p+0x34);
         if (p) {
@@ -2313,8 +2349,7 @@ int convert_tournament_id(int id)
             if (id == (int)tid) {
                 // safe to call
                 DWORD res = -1;
-                //int target = 0x42982db;
-                int target = 0x409f70c;
+                int target = _tid_target1;
                 int unc_tid = (int)tid;
                 __asm {
                     mov eax,unc_tid
