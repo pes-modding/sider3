@@ -94,6 +94,15 @@ struct module_t {
 list<module_t*> _modules;
 module_t* _curr_m;
 
+// registered event handlers
+list<module_t*> _evt_trophy_check;
+list<module_t*> _evt_lcpk_fs;
+list<module_t*> _evt_lcpk_rewrite;
+list<module_t*> _evt_set_home_team;
+list<module_t*> _evt_set_away_team;
+list<module_t*> _evt_set_tid;
+list<module_t*> _evt_set_match_time;
+
 wchar_t module_filename[MAX_PATH];
 wchar_t dll_log[MAX_PATH];
 wchar_t dll_ini[MAX_PATH];
@@ -845,6 +854,7 @@ static int sider_context_register(lua_State *L)
         lua_pushvalue(L, -1);
         lua_xmove(L, _curr_m->L, 1);
         _curr_m->evt_trophy_check = lua_gettop(_curr_m->L);
+        _evt_trophy_check.push_back(_curr_m);
         logu_("Registered for \"%s\" event\n", event_key);
     }
     else if (strcmp(event_key, "livecpk_make_key")==0) {
@@ -863,30 +873,35 @@ static int sider_context_register(lua_State *L)
         lua_pushvalue(L, -1);
         lua_xmove(L, _curr_m->L, 1);
         _curr_m->evt_lcpk_rewrite = lua_gettop(_curr_m->L);
+        _evt_lcpk_rewrite.push_back(_curr_m);
         logu_("Registered for \"%s\" event\n", event_key);
     }
     else if (strcmp(event_key, "set_home_team")==0) {
         lua_pushvalue(L, -1);
         lua_xmove(L, _curr_m->L, 1);
         _curr_m->evt_set_home_team = lua_gettop(_curr_m->L);
+        _evt_set_home_team.push_back(_curr_m);
         logu_("Registered for \"%s\" event\n", event_key);
     }
     else if (strcmp(event_key, "set_away_team")==0) {
         lua_pushvalue(L, -1);
         lua_xmove(L, _curr_m->L, 1);
         _curr_m->evt_set_away_team = lua_gettop(_curr_m->L);
+        _evt_set_away_team.push_back(_curr_m);
         logu_("Registered for \"%s\" event\n", event_key);
     }
     else if (strcmp(event_key, "set_tournament_id")==0) {
         lua_pushvalue(L, -1);
         lua_xmove(L, _curr_m->L, 1);
         _curr_m->evt_set_tid = lua_gettop(_curr_m->L);
+        _evt_set_tid.push_back(_curr_m);
         logu_("Registered for \"%s\" event\n", event_key);
     }
     else if (strcmp(event_key, "set_match_time")==0) {
         lua_pushvalue(L, -1);
         lua_xmove(L, _curr_m->L, 1);
         _curr_m->evt_set_match_time = lua_gettop(_curr_m->L);
+        _evt_set_match_time.push_back(_curr_m);
         logu_("Registered for \"%s\" event\n", event_key);
     }
     else {
@@ -1134,6 +1149,12 @@ DWORD install_func(LPVOID thread_param) {
 
                 // add to list of loaded modules
                 _modules.push_back(m);
+                
+                // special case of _evt_lcpk_fs
+                if ((m->evt_lcpk_make_key != 0) ||
+                    (m->evt_lcpk_get_filepath != 0)) {
+                    _evt_lcpk_fs.push_back(m);
+                }
             }
         }
     }
@@ -1636,80 +1657,72 @@ bool file_exists(wstring *fullpath)
 
 void module_set_home(module_t *m, DWORD team_id)
 {
-    if (m->evt_set_home_team != 0) {
-        EnterCriticalSection(&_cs);
-        lua_pushvalue(m->L, m->evt_set_home_team);
-        lua_xmove(m->L, L, 1);
-        // push params
-        lua_pushvalue(L, 1); // ctx
-        lua_pushinteger(L, team_id);
-        if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
-            const char *err = luaL_checkstring(L, -1);
-            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
-            lua_pop(L, 1);
-        }
-        LeaveCriticalSection(&_cs);
+    EnterCriticalSection(&_cs);
+    lua_pushvalue(m->L, m->evt_set_home_team);
+    lua_xmove(m->L, L, 1);
+    // push params
+    lua_pushvalue(L, 1); // ctx
+    lua_pushinteger(L, team_id);
+    if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
+        const char *err = luaL_checkstring(L, -1);
+        logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
+        lua_pop(L, 1);
     }
+    LeaveCriticalSection(&_cs);
 }
 
 void module_set_away(module_t *m, DWORD team_id)
 {
-    if (m->evt_set_away_team != 0) {
-        EnterCriticalSection(&_cs);
-        lua_pushvalue(m->L, m->evt_set_away_team);
-        lua_xmove(m->L, L, 1);
-        // push params
-        lua_pushvalue(L, 1); // ctx
-        lua_pushinteger(L, team_id);
-        if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
-            const char *err = luaL_checkstring(L, -1);
-            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
-            lua_pop(L, 1);
-        }
-        LeaveCriticalSection(&_cs);
+    EnterCriticalSection(&_cs);
+    lua_pushvalue(m->L, m->evt_set_away_team);
+    lua_xmove(m->L, L, 1);
+    // push params
+    lua_pushvalue(L, 1); // ctx
+    lua_pushinteger(L, team_id);
+    if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
+        const char *err = luaL_checkstring(L, -1);
+        logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
+        lua_pop(L, 1);
     }
+    LeaveCriticalSection(&_cs);
 }
 
 void module_set_tid(module_t *m, int tid)
 {
-    if (m->evt_set_tid != 0) {
-        EnterCriticalSection(&_cs);
-        lua_pushvalue(m->L, m->evt_set_tid);
-        lua_xmove(m->L, L, 1);
-        // push params
-        lua_pushvalue(L, 1); // ctx
-        lua_pushinteger(L, tid);
-        if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
-            const char *err = luaL_checkstring(L, -1);
-            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
-            lua_pop(L, 1);
-        }
-        LeaveCriticalSection(&_cs);
+    EnterCriticalSection(&_cs);
+    lua_pushvalue(m->L, m->evt_set_tid);
+    lua_xmove(m->L, L, 1);
+    // push params
+    lua_pushvalue(L, 1); // ctx
+    lua_pushinteger(L, tid);
+    if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
+        const char *err = luaL_checkstring(L, -1);
+        logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
+        lua_pop(L, 1);
     }
+    LeaveCriticalSection(&_cs);
 }
 
 bool module_set_match_time(module_t *m, DWORD *num_minutes)
 {
     bool res(false);
-    if (m->evt_set_match_time != 0) {
-        EnterCriticalSection(&_cs);
-        lua_pushvalue(m->L, m->evt_set_match_time);
-        lua_xmove(m->L, L, 1);
-        // push params
-        lua_pushvalue(L, 1); // ctx
-        lua_pushinteger(L, *num_minutes);
-        if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
-            const char *err = luaL_checkstring(L, -1);
-            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
-        }
-        else if (lua_isnumber(L, -1)) {
-            int value = luaL_checkinteger(L, -1);
-            *num_minutes = value;
-            res = true;
-        }
-        lua_pop(L, 1);
-        LeaveCriticalSection(&_cs);
+    EnterCriticalSection(&_cs);
+    lua_pushvalue(m->L, m->evt_set_match_time);
+    lua_xmove(m->L, L, 1);
+    // push params
+    lua_pushvalue(L, 1); // ctx
+    lua_pushinteger(L, *num_minutes);
+    if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
+        const char *err = luaL_checkstring(L, -1);
+        logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
     }
+    else if (lua_isnumber(L, -1)) {
+        int value = luaL_checkinteger(L, -1);
+        *num_minutes = value;
+        res = true;
+    }
+    lua_pop(L, 1);
+    LeaveCriticalSection(&_cs);
     return res;
 }
 
@@ -1816,13 +1829,8 @@ wstring* have_content(char *file_name)
 {
     char key[512];
     list<module_t*>::iterator i;
-    for (i = _modules.begin(); i != _modules.end(); i++) {
+    for (i = _evt_lcpk_fs.begin(); i != _evt_lcpk_fs.end(); i++) {
         module_t *m = *i;
-        if (!m->evt_lcpk_make_key && !m->evt_lcpk_get_filepath) {
-            // neither of callbacks is defined --> nothing to do
-            continue;
-        }
-
         module_make_key(m, file_name, key);
                
         if (_config->_lookup_cache_enabled) {
@@ -2133,32 +2141,30 @@ DWORD trophy_map(DWORD tournament_id)
     DWORD res = tournament_id;
     if (_config->_lua_enabled) {
         set_context_field_int("tournament_id", tournament_id);
-        for (list<module_t*>::iterator it = _modules.begin();
-                it != _modules.end();
+        for (list<module_t*>::iterator it = _evt_trophy_check.begin();
+                it != _evt_trophy_check.end();
                 it++) {
             module_t *m = *it;
-            if (m->evt_trophy_check != 0) {
-                bool done(false);
-                EnterCriticalSection(&_cs);
-                lua_pushvalue(m->L, m->evt_trophy_check);
-                lua_xmove(m->L, L, 1);
-                // push params
-                lua_pushvalue(L, 1); // ctx
-                lua_pushinteger(L, tournament_id);
-                if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
-                    const char *err = luaL_checkstring(L, -1);
-                    logu_("[%d] lua ERROR: %s\n",
-                        GetCurrentThreadId(), err);
-                }
-                else if (lua_isnumber(L, -1)) {
-                    res = (DWORD)luaL_checkint(L, -1);
-                    done = true;
-                }
-                lua_pop(L, 1);
-                LeaveCriticalSection(&_cs);
-                if (done) {
-                    break;
-                }
+            bool done(false);
+            EnterCriticalSection(&_cs);
+            lua_pushvalue(m->L, m->evt_trophy_check);
+            lua_xmove(m->L, L, 1);
+            // push params
+            lua_pushvalue(L, 1); // ctx
+            lua_pushinteger(L, tournament_id);
+            if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
+                const char *err = luaL_checkstring(L, -1);
+                logu_("[%d] lua ERROR: %s\n",
+                    GetCurrentThreadId(), err);
+            }
+            else if (lua_isnumber(L, -1)) {
+                res = (DWORD)luaL_checkint(L, -1);
+                done = true;
+            }
+            lua_pop(L, 1);
+            LeaveCriticalSection(&_cs);
+            if (done) {
+                break;
             }
         }
     }
@@ -2185,7 +2191,7 @@ void set_tid(int tid)
     // lua callbacks
     if (_config->_lua_enabled) {
         list<module_t*>::iterator i;
-        for (i = _modules.begin(); i != _modules.end(); i++) {
+        for (i = _evt_set_tid.begin(); i != _evt_set_tid.end(); i++) {
             module_t *m = *i;
             module_set_tid(m, _curr_tournament_id);
         }
@@ -2236,9 +2242,14 @@ DWORD team_ids_read(DWORD *home_team_id_encoded, DWORD *away_team_id_encoded)
     // lua callbacks
     if (_config->_lua_enabled) {
         list<module_t*>::iterator i;
-        for (i = _modules.begin(); i != _modules.end(); i++) {
+        for (i = _evt_set_home_team.begin(); 
+             i != _evt_set_home_team.end(); i++) {
             module_t *m = *i;
             module_set_home(m, home);
+        }
+        for (i = _evt_set_away_team.begin(); 
+             i != _evt_set_away_team.end(); i++) {
+            module_t *m = *i;
             module_set_away(m, away);
         }
     }
@@ -2288,8 +2299,14 @@ DWORD team_info_write(DWORD team_id_encoded, DWORD is_away)
     }
     // lua callbacks
     if (_config->_lua_enabled) {
-        list<module_t*>::iterator i;
-        for (i = _modules.begin(); i != _modules.end(); i++) {
+        list<module_t*>::iterator i, j;
+        i = (is_away) ? 
+            _evt_set_away_team.begin() :
+            _evt_set_home_team.begin();
+        j = (is_away) ? 
+            _evt_set_away_team.end() :
+            _evt_set_home_team.end();
+        for (; i != j; i++) {
             module_t *m = *i;
             if (is_away) {
                 module_set_away(m, team_id);
@@ -2349,7 +2366,8 @@ DWORD minutes_set(DWORD settings_addr, DWORD num_minutes)
     // lua callbacks
     if (_config->_lua_enabled) {
         list<module_t*>::iterator i;
-        for (i = _modules.begin(); i != _modules.end(); i++) {
+        for (i = _evt_set_match_time.begin(); 
+             i != _evt_set_match_time.end(); i++) {
             module_t *m = *i;
             if (module_set_match_time(m, &num_minutes)) {
                 break;
