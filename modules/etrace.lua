@@ -1,5 +1,5 @@
--- Eevent tracer
--- prints context info reading to events
+-- Event tracer
+-- prints event and context info, reacting to various events
 
 local m = {}
 
