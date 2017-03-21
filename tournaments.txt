@@ -3,6 +3,8 @@ Tournament ids (some)
 
 0   - exhibition match
 1   - uefa champions league exhibition match
+2   - europa league exhibition match
+5   - afc champions league exhibition match
 11  - uefa champions league (qualifying round play-off)
 12  - uefa champions league
 13  - uefa champions league (knock-out)
@@ -12,9 +14,14 @@ Tournament ids (some)
 32  - afc champions league 
 33  - afc champions league (knock-out)
 39  - english league
+43  - spanish league
+53  - netherlands league
 84  - english cup
+89  - konami league
 101 - english super cup
+102 - spanish super cup
 103 - french super cup
+104 - italian super cup
 134 - international cup
 135 - international cup (knock-out)
 138 - european cup

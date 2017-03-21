@@ -37,6 +37,14 @@ void trophy_map_cp();
 void team_ids_read_cp();
 void team_info_write_cp();
 
+void minutes_set_cp();
+void set_defaults_cp();
+void write_exhib_id_cp();
+void write_tournament_id_cp();
+
+int convert_tournament_id2();
+int convert_tournament_id(int id);
+
 int _curr_tournament_id(0);
 bool _replace_trophy(false);
 
@@ -244,6 +252,41 @@ BYTE team_ids_pattern2[] =
     "\x66\x89\x53\x2c";
 int team_ids_off2 = -8;
 */
+
+// number of minutes
+BYTE minutes_pattern[14] =
+    "\x55"
+    "\x89\xe5"
+    "\x8a\x45\x08"
+    "\x88\x41\x14"
+    "\x5d"
+    "\xc2\x04\x00";
+int minutes_off = 3;
+
+// set default settings
+BYTE settings_pattern[16] =
+    "\xc7\x06\xff\xff\xff\xff"
+    "\xc7\x46\x08\x37\x00\x00\x00"
+    "\x88\x5e";
+int settings_off = 0;
+
+// write tournament id
+BYTE write_tid_pattern[18] =
+    "\x8b\x7d\x08"
+    "\x66\x8b\x07"
+    "\x66\x89\x06"
+    "\x66\x8b\x4f\x02"
+    "\x66\x89\x4e\x02";
+int write_tid_off = 17;
+
+// write exhib id
+BYTE write_exhib_id_pattern[14] =
+    "\xc7\x46\x50\x02\x00\x00\x00"
+    "\x5e"
+    "\xc3"
+    "\x8b\x46\x4c"
+    "\x50";
+int write_exhib_id_off = 0x22;
 
 bool patched(false);
 bool patched2(false);
@@ -1139,6 +1182,7 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
     // team ids
     {
         BYTE *p;
+        /*
         p = find_code_frag(base, h->Misc.VirtualSize,
             team_ids_pattern1, sizeof(team_ids_pattern1)-1);
         if (!p) {
@@ -1151,6 +1195,7 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
             _team_ids_read_org = get_target_addr((DWORD)p);
             hook_call_point((DWORD)p, team_ids_read_cp, 6, 0);
         }
+        */
 
         p = find_code_frag(base, h->Misc.VirtualSize,
             team_ids_pattern2, sizeof(team_ids_pattern2)-1);
@@ -1163,6 +1208,70 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
 
             _team_info_write_org = get_target_addr((DWORD)p);
             hook_call_point((DWORD)p, team_info_write_cp, 6, 0);
+        }
+    }
+
+    // num minutes
+    {
+        BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
+            minutes_pattern, sizeof(minutes_pattern)-1);
+        if (!p) {
+            log_(L"Unable to patch: (minutes set) code pattern not matched\n");
+        }
+        else {
+            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+            p = p + minutes_off;
+
+            log_(L"Enabling set-num-minutes event\n");
+            hook_call_point((DWORD)p, minutes_set_cp, 6, 1);
+        }
+    }
+
+    // set default exhib settings
+    {
+        BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
+            settings_pattern, sizeof(settings_pattern)-1);
+        if (!p) {
+            log_(L"Unable to patch: (set-defaults) code pattern not matched\n");
+        }
+        else {
+            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+            p = p + settings_off;
+
+            log_(L"Enabling set-defaults event\n");
+            hook_call_point((DWORD)p, set_defaults_cp, 6, 1);
+        }
+    }
+
+    // write tournament id
+    {
+        BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
+            write_tid_pattern, sizeof(write_tid_pattern)-1);
+        if (!p) {
+            log_(L"Unable to patch: (write-tid) code pattern not matched\n");
+        }
+        else {
+            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+            p = p + write_tid_off;
+
+            log_(L"Enabling write-tid event\n");
+            hook_call_point((DWORD)p, write_tournament_id_cp, 6, 1);
+        }
+    }
+
+    // write exhibition id
+    {
+        BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
+            write_exhib_id_pattern, sizeof(write_exhib_id_pattern)-1);
+        if (!p) {
+            log_(L"Unable to patch: (write-exhib-id) code pattern not matched\n");
+        }
+        else {
+            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+            p = p + write_exhib_id_off;
+
+            log_(L"Enabling write-exhib-id event\n");
+            hook_call_point((DWORD)p, write_exhib_id_cp, 6, 2);
         }
     }
 
@@ -1971,8 +2080,15 @@ void set_context_field_int(const char *name, int value)
         lua_pushvalue(L, 1); // ctx
         lua_pushinteger(L, value);
         lua_setfield(L, -2, name);
+        lua_pop(L, 1);
         LeaveCriticalSection(&_cs);
     }
+}
+
+void set_tid(int tid)
+{
+    _curr_tournament_id = tid;
+    set_context_field_int("tournament_id", _curr_tournament_id);
 }
 
 void trophy_map_cp()
@@ -2112,6 +2228,228 @@ void team_info_write_cp()
         pop ebp
         popfd
         jmp _team_info_write_org // jump to original target
+    }
+}
+
+DWORD minutes_set(DWORD settings_addr, DWORD num_minutes)
+{
+    WORD tid = *(WORD*)(settings_addr + 2);
+    if (tid != 0xffff) {
+        // non-exhibition: try to accelerate events
+        // tournament id
+        set_tid(convert_tournament_id(int(tid)));
+        log_(L"tournament id: %d\n", _curr_tournament_id);
+        // team ids
+        team_ids_read(
+            (DWORD*)(settings_addr + 0xf4),   // home
+            (DWORD*)(settings_addr + 0x614)); // away
+    }
+    log_(L"match time: %d minutes\n", num_minutes);
+    num_minutes = 1;  //temp
+    set_context_field_int("match_time", num_minutes);
+    return num_minutes;
+}
+
+void minutes_set_cp()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        pushfd
+        push ebp
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        mov al, byte ptr ss:[ebp+8]
+        and eax,0xff
+        push eax  // number of minutes
+        push ecx  // settings addr
+        call minutes_set
+        add esp,0x08     // pop parameters
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        mov byte ptr [ecx+0x14], al
+        pop ebx
+        pop ebp
+        popfd
+        retn
+    }
+}
+
+int convert_tournament_id2()
+{
+    // [[26711b8]+34]+0x537b8
+    BYTE *p = *(BYTE**)0x26711b8;
+    if (p) {
+        p = *(BYTE**)(p+0x34);
+        if (p) {
+            p = p + 0x537b8;
+            DWORD res = -1;
+            int target = 0x42982db;
+            __asm {
+                call target
+                mov res,eax
+            }
+            return (int)res;
+        }
+    }
+    return 0;
+}
+
+int convert_tournament_id(int id)
+{
+    // [[26711b8]+34]+0x537b8
+    BYTE *p = *(BYTE**)0x26711b8;
+    if (p) {
+        p = *(BYTE**)(p+0x34);
+        if (p) {
+            p = p + 0x537b8;
+            WORD tid = *(WORD*)(p+2);
+            if (id == (int)tid) {
+                // safe to call
+                DWORD res = -1;
+                //int target = 0x42982db;
+                int target = 0x409f70c;
+                int unc_tid = (int)tid;
+                __asm {
+                    mov eax,unc_tid
+                    push eax
+                    call target
+                    mov res,eax
+                    add esp,4
+                }
+                return (int)res;
+            }
+        }
+    }
+    return -1;
+}
+
+DWORD set_defaults(DWORD settings_addr)
+{
+    //BYTE *p = (BYTE*)settings_addr;
+    //WORD id = *(WORD*)(p+2);
+    //if (_curr_tournament_id != 0) {
+    int new_tid = convert_tournament_id2();
+    if (new_tid != _curr_tournament_id) {
+        if ((new_tid == 0) || (_curr_tournament_id == 0 && new_tid != 6)) {
+            set_tid(new_tid);
+            log_(L"set-defaults: tournament_id = %d\n", _curr_tournament_id);
+        }
+    }
+    return 0;
+}
+
+void set_defaults_cp()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        pushfd
+        push ebp
+        push eax
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        push esi  // settings struct
+        call set_defaults
+        add esp,0x04     // pop parameters
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop eax
+        pop ebp
+        popfd
+        mov dword ptr ds:[esi],-1
+        retn
+    }
+}
+
+DWORD write_tournament_id(DWORD settings_addr)
+{
+    WORD tid = *(WORD*)(settings_addr + 2);
+    set_tid(convert_tournament_id((int)tid));
+    log_(L"tournament_id = %d\n", _curr_tournament_id);
+    return 0;
+}
+
+void write_tournament_id_cp()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        pushfd
+        push ebp
+        push eax
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        push esi  // settings struct
+        call write_tournament_id
+        add esp,0x04     // pop parameters
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop eax
+        pop ebp
+        popfd
+        mov edx, dword ptr ds:[edi+4]
+        mov dword ptr ds:[esi+4], edx
+        retn
+    }
+}
+
+DWORD write_exhib_id(DWORD exhib_id)
+{
+    if (_curr_tournament_id == 0) {
+        set_tid(convert_tournament_id2());
+        log_(L"exhib: tournament_id = %d\n", _curr_tournament_id);
+    }
+    return 0;
+}
+
+void write_exhib_id_cp()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        pushfd
+        push ebp
+        push eax
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        push ecx  // exhibition id
+        call write_exhib_id
+        add esp,0x04     // pop parameters
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop eax
+        pop ebp
+        popfd
+        mov dword ptr ds:[esi+0x50], 3
+        retn
     }
 }
 
