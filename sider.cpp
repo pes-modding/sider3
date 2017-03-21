@@ -88,6 +88,8 @@ struct module_t {
     int evt_lcpk_rewrite;
     int evt_set_home_team;
     int evt_set_away_team;
+    int evt_set_tid;
+    int evt_set_match_time;
 };
 list<module_t*> _modules;
 module_t* _curr_m;
@@ -875,6 +877,18 @@ static int sider_context_register(lua_State *L)
         _curr_m->evt_set_away_team = lua_gettop(_curr_m->L);
         logu_("Registered for \"%s\" event\n", event_key);
     }
+    else if (strcmp(event_key, "set_tournament_id")==0) {
+        lua_pushvalue(L, -1);
+        lua_xmove(L, _curr_m->L, 1);
+        _curr_m->evt_set_tid = lua_gettop(_curr_m->L);
+        logu_("Registered for \"%s\" event\n", event_key);
+    }
+    else if (strcmp(event_key, "set_match_time")==0) {
+        lua_pushvalue(L, -1);
+        lua_xmove(L, _curr_m->L, 1);
+        _curr_m->evt_set_match_time = lua_gettop(_curr_m->L);
+        logu_("Registered for \"%s\" event\n", event_key);
+    }
     else {
         logu_("WARN: trying to register for unknown event: \"%s\"\n",
             event_key);
@@ -1656,6 +1670,49 @@ void module_set_away(module_t *m, DWORD team_id)
     }
 }
 
+void module_set_tid(module_t *m, int tid)
+{
+    if (m->evt_set_tid != 0) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(m->L, m->evt_set_tid);
+        lua_xmove(m->L, L, 1);
+        // push params
+        lua_pushvalue(L, 1); // ctx
+        lua_pushinteger(L, tid);
+        if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
+            const char *err = luaL_checkstring(L, -1);
+            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
+            lua_pop(L, 1);
+        }
+        LeaveCriticalSection(&_cs);
+    }
+}
+
+bool module_set_match_time(module_t *m, DWORD *num_minutes)
+{
+    bool res(false);
+    if (m->evt_set_match_time != 0) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(m->L, m->evt_set_match_time);
+        lua_xmove(m->L, L, 1);
+        // push params
+        lua_pushvalue(L, 1); // ctx
+        lua_pushinteger(L, *num_minutes);
+        if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
+            const char *err = luaL_checkstring(L, -1);
+            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
+        }
+        else if (lua_isnumber(L, -1)) {
+            int value = luaL_checkinteger(L, -1);
+            *num_minutes = value;
+            res = true;
+        }
+        lua_pop(L, 1);
+        LeaveCriticalSection(&_cs);
+    }
+    return res;
+}
+
 bool module_rewrite(module_t *m, const char *file_name)
 {
     bool res(false);
@@ -2125,6 +2182,14 @@ void set_tid(int tid)
 {
     _curr_tournament_id = tid;
     set_context_field_int("tournament_id", _curr_tournament_id);
+    // lua callbacks
+    if (_config->_lua_enabled) {
+        list<module_t*>::iterator i;
+        for (i = _modules.begin(); i != _modules.end(); i++) {
+            module_t *m = *i;
+            module_set_tid(m, _curr_tournament_id);
+        }
+    }
 }
 
 void trophy_map_cp()
@@ -2274,14 +2339,23 @@ DWORD minutes_set(DWORD settings_addr, DWORD num_minutes)
         // non-exhibition: try to accelerate events
         // tournament id
         set_tid(convert_tournament_id(int(tid)));
-        log_(L"tournament id: %d\n", _curr_tournament_id);
+        DBG log_(L"tournament id: %d\n", _curr_tournament_id);
         // team ids
         team_ids_read(
             (DWORD*)(settings_addr + 0xf4),   // home
             (DWORD*)(settings_addr + 0x614)); // away
     }
-    log_(L"match time: %d minutes\n", num_minutes);
-    num_minutes = 1;  //temp
+    DBG log_(L"match time: %d minutes\n", num_minutes);
+    // lua callbacks
+    if (_config->_lua_enabled) {
+        list<module_t*>::iterator i;
+        for (i = _modules.begin(); i != _modules.end(); i++) {
+            module_t *m = *i;
+            if (module_set_match_time(m, &num_minutes)) {
+                break;
+            }
+        }
+    }
     set_context_field_int("match_time", num_minutes);
     return num_minutes;
 }
@@ -2374,7 +2448,8 @@ DWORD set_defaults(DWORD settings_addr)
     if (new_tid != _curr_tournament_id) {
         if ((new_tid == 0) || (_curr_tournament_id == 0 && new_tid != 6)) {
             set_tid(new_tid);
-            log_(L"set-defaults: tournament_id = %d\n", _curr_tournament_id);
+            DBG log_(L"set-defaults: tournament_id = %d\n",
+                _curr_tournament_id);
         }
     }
     return 0;
@@ -2414,7 +2489,7 @@ DWORD write_tournament_id(DWORD settings_addr)
 {
     WORD tid = *(WORD*)(settings_addr + 2);
     set_tid(convert_tournament_id((int)tid));
-    log_(L"tournament_id = %d\n", _curr_tournament_id);
+    DBG log_(L"tournament_id = %d\n", _curr_tournament_id);
     return 0;
 }
 
@@ -2453,7 +2528,7 @@ DWORD write_exhib_id(DWORD exhib_id)
 {
     if (_curr_tournament_id == 0) {
         set_tid(convert_tournament_id2());
-        log_(L"exhib: tournament_id = %d\n", _curr_tournament_id);
+        DBG log_(L"exhib: tournament_id = %d\n", _curr_tournament_id);
     }
     return 0;
 }
