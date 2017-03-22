@@ -968,6 +968,17 @@ static void push_env_table(lua_State *L, const wchar_t *script_name)
     }
     */
 
+    // stripped-down os library: with only time, clock, and date
+    char *os_names[] = { "time", "clock", "date" };
+    lua_newtable(L);
+    lua_getglobal(L, "os");
+    for (int i=0; i<sizeof(os_names)/sizeof(char*); i++) {
+        lua_getfield(L, -1, os_names[i]);
+        lua_setfield(L, -3, os_names[i]);
+    }
+    lua_pop(L, 1);
+    lua_setfield(L, -2, "os");
+
     lua_pushstring(L, "log");
     lua_pushvalue(L, -2);  // upvalue for sider_log C-function
     lua_pushcclosure(L, sider_log, 1);
