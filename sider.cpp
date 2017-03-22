@@ -41,11 +41,14 @@ void minutes_set_cp();
 void set_defaults_cp();
 void write_exhib_id_cp();
 void write_tournament_id_cp();
+void write_stadium_cp();
 
 // locations to fill, when hooking
 DWORD _tid_addr1 = 0;
 DWORD _tid_target1 = 0;
 DWORD _tid_target2 = 0;
+
+DWORD _write_stadium_org = 0;
 
 int convert_tournament_id2();
 int convert_tournament_id(int id);
@@ -90,6 +93,7 @@ struct module_t {
     int evt_set_away_team;
     int evt_set_tid;
     int evt_set_match_time;
+    int evt_set_stadium;
 };
 list<module_t*> _modules;
 module_t* _curr_m;
@@ -155,6 +159,13 @@ struct READ_REPL {
     DWORD realOffset;
     READ_STRUCT *rs;
     HANDLE handle;
+};
+
+struct STAD_STRUCT {
+    DWORD stadium;
+    DWORD timeofday;
+    DWORD weather;
+    DWORD season;
 };
 
 // original call destination of "lookup_file"
@@ -303,6 +314,13 @@ BYTE tid_func_pattern[12] =
     "\x77\x14";
 int tid_func_off1 = -5;
 int tid_func_off2 = -0x1c;
+
+// write stadium settings pattern
+BYTE write_stadium_pattern[9] =
+    "\x50"
+    "\x8d\x8b\xa0\x50\x01\x00"
+    "\xe8";
+int write_stadium_off = 7;
 
 bool patched(false);
 bool patched2(false);
@@ -889,6 +907,12 @@ static int sider_context_register(lua_State *L)
         _curr_m->evt_set_match_time = lua_gettop(_curr_m->L);
         logu_("Registered for \"%s\" event\n", event_key);
     }
+    else if (strcmp(event_key, "set_stadium")==0) {
+        lua_pushvalue(L, -1);
+        lua_xmove(L, _curr_m->L, 1);
+        _curr_m->evt_set_stadium = lua_gettop(_curr_m->L);
+        logu_("Registered for \"%s\" event\n", event_key);
+    }
     else {
         logu_("WARN: trying to register for unknown event: \"%s\"\n",
             event_key);
@@ -1325,6 +1349,23 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
         }
     }
 
+    // write stadium options
+    {
+        BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
+            write_stadium_pattern, sizeof(write_stadium_pattern)-1);
+        if (!p) {
+            log_(L"Unable to patch: (write-stadium) code pattern not matched\n");
+        }
+        else {
+            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+            p = p + write_stadium_off;
+
+            log_(L"Enabling write-stadium event\n");
+            _write_stadium_org = get_target_addr((DWORD)p);
+            hook_call_point((DWORD)p, write_stadium_cp, 7, 0);
+        }
+    }
+
     if (_config->_livecpk_enabled) {
         BYTE *frag[5];
         frag[0] = lcpk_pattern_get_file_info;
@@ -1705,6 +1746,57 @@ bool module_set_match_time(module_t *m, DWORD *num_minutes)
         else if (lua_isnumber(L, -1)) {
             int value = luaL_checkinteger(L, -1);
             *num_minutes = value;
+            res = true;
+        }
+        lua_pop(L, 1);
+        LeaveCriticalSection(&_cs);
+    }
+    return res;
+}
+
+bool module_set_stadium(module_t *m, STAD_STRUCT *ss)
+{
+    bool res(false);
+    if (m->evt_set_stadium != 0) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(m->L, m->evt_set_stadium);
+        lua_xmove(m->L, L, 1);
+        // push params
+        lua_pushvalue(L, 1); // ctx
+        lua_newtable(L);
+        lua_pushinteger(L, ss->stadium);
+        lua_setfield(L, -2, "stadium");
+        lua_pushinteger(L, ss->timeofday);
+        lua_setfield(L, -2, "timeofday");
+        lua_pushinteger(L, ss->weather);
+        lua_setfield(L, -2, "weather");
+        lua_pushinteger(L, ss->season);
+        lua_setfield(L, -2, "season");
+        if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
+            const char *err = luaL_checkstring(L, -1);
+            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
+        }
+        else if (lua_istable(L, -1)) {
+            lua_getfield(L, -1, "stadium");
+            if (lua_isnumber(L, -1)) {
+                ss->stadium = luaL_checkinteger(L, -1);
+            }
+            lua_pop(L, 1);
+            lua_getfield(L, -1, "timeofday");
+            if (lua_isnumber(L, -1)) {
+                ss->timeofday = luaL_checkinteger(L, -1);
+            }
+            lua_pop(L, 1);
+            lua_getfield(L, -1, "weather");
+            if (lua_isnumber(L, -1)) {
+                ss->weather = luaL_checkinteger(L, -1);
+            }
+            lua_pop(L, 1);
+            lua_getfield(L, -1, "season");
+            if (lua_isnumber(L, -1)) {
+                ss->season = luaL_checkinteger(L, -1);
+            }
+            lua_pop(L, 1);
             res = true;
         }
         lua_pop(L, 1);
@@ -2560,6 +2652,57 @@ void write_exhib_id_cp()
         popfd
         mov dword ptr ds:[esi+0x50], 3
         retn
+    }
+}
+
+DWORD write_stadium(STAD_STRUCT *ss)
+{
+    // lua callbacks
+    if (_config->_lua_enabled) {
+        list<module_t*>::iterator i;
+        for (i = _modules.begin(); i != _modules.end(); i++) {
+            module_t *m = *i;
+            if (module_set_stadium(m, ss)) {
+                break;
+            }
+        }
+    }
+    DBG log_(L"stadium=%d, timeofday=%d, weather=%d, season=%d\n",
+        ss->stadium, ss->timeofday, ss->weather, ss->season);
+    return 0;
+}
+
+void write_stadium_cp()
+{
+    DWORD addr;
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        mov addr,ecx
+        push eax
+        call _write_stadium_org
+        pushfd
+        push ebp
+        push eax
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        mov ecx,addr
+        push ecx  // staidum options base addr
+        call write_stadium
+        add esp,0x04     // pop parameters
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop eax
+        pop ebp
+        popfd
+        retn 4
     }
 }
 
