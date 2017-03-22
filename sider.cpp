@@ -939,7 +939,7 @@ static void push_env_table(lua_State *L, const wchar_t *script_name)
     char *sandbox[] = {
         "assert", "table", "pairs", "ipairs",
         "string", "math", "tonumber", "tostring",
-        "unpack", "error", "_VERSION", "type",
+        "unpack", "error", "_VERSION", "type", "io",
     };
 
     lua_newtable(L);
