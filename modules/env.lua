@@ -12,6 +12,13 @@ function m.init(ctx)
     for k,v in pairs(ctx) do
         log(string.format("%s: %s", k, v))
     end
+
+    log("==> os:")
+    if os then
+        for k,v in pairs(os) do
+            log(string.format("%s: %s", k, v))
+        end
+    end
 end
 
 return m
