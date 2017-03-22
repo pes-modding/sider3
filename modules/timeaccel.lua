@@ -13,7 +13,7 @@ function m.set_match_time(ctx, minutes)
 end
 
 function m.init(ctx)
-   ctx.register("set_match_time", m.set_match_time); 
+   ctx.register("set_match_time", m.set_match_time)
 end
 
 return m
