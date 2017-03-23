@@ -2295,6 +2295,11 @@ void set_tid(int tid)
     }
 }
 
+void set_mid(WORD mid)
+{
+    set_context_field_int("match_id", mid);
+}
+
 void trophy_map_cp()
 {
     __asm {
@@ -2437,6 +2442,7 @@ void team_info_write_cp()
 
 DWORD minutes_set(DWORD settings_addr, DWORD num_minutes)
 {
+    set_context_field_int("match_time", num_minutes);
     WORD tid = *(WORD*)(settings_addr + 2);
     if (tid != 0xffff) {
         // non-exhibition: try to accelerate events
@@ -2550,6 +2556,7 @@ DWORD set_defaults(DWORD settings_addr)
     int new_tid = convert_tournament_id2();
     if (new_tid != _curr_tournament_id) {
         if ((new_tid == 0) || (_curr_tournament_id == 0 && new_tid != 6)) {
+            set_mid(*(WORD*)settings_addr);
             set_tid(new_tid);
             DBG log_(L"set-defaults: tournament_id = %d\n",
                 _curr_tournament_id);
@@ -2590,6 +2597,8 @@ void set_defaults_cp()
 
 DWORD write_tournament_id(DWORD settings_addr)
 {
+    WORD mid = *(WORD*)(settings_addr);
+    set_mid(mid);
     WORD tid = *(WORD*)(settings_addr + 2);
     set_tid(convert_tournament_id((int)tid));
     DBG log_(L"tournament_id = %d\n", _curr_tournament_id);
@@ -2668,6 +2677,11 @@ void write_exhib_id_cp()
 
 DWORD write_stadium(STAD_STRUCT *ss)
 {
+    set_context_field_int("stadium", ss->stadium);
+    set_context_field_int("timeofday", ss->timeofday);
+    set_context_field_int("weather", ss->weather);
+    set_context_field_int("season", ss->season);
+
     // lua callbacks
     if (_config->_lua_enabled) {
         list<module_t*>::iterator i;
@@ -2680,6 +2694,11 @@ DWORD write_stadium(STAD_STRUCT *ss)
     }
     DBG log_(L"stadium=%d, timeofday=%d, weather=%d, season=%d\n",
         ss->stadium, ss->timeofday, ss->weather, ss->season);
+
+    set_context_field_int("stadium", ss->stadium);
+    set_context_field_int("timeofday", ss->timeofday);
+    set_context_field_int("weather", ss->weather);
+    set_context_field_int("season", ss->season);
     return 0;
 }
 
