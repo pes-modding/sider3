@@ -4,7 +4,7 @@ Copyright (C) 2017 juce, nesa24
 
 
 
-This tool allows you to make small tweaks to your PES experience:
+This tool allows you to "enhance" your PES experience:
 
 1. You can freely select sides in competition
 modes - where such selection is normally restricted.
@@ -18,6 +18,12 @@ at run-time with content from files stored on disk, instead of
 having to pack everything into CPK-archives. (This feature
 is similar to Kitserver's AFS2FS and to FileLoader for earler
 versions of PES).
+
+4. If you feel really adventurous, you can extend Sider functionality
+beyond its basic features, by writing extension modules in Lua.
+This requires some programming, but it's really not that hard ;-)
+See scripting.txt - for detailed documentation on that.
+
 
 
 HOW TO USE:
