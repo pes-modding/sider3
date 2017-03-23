@@ -1,7 +1,7 @@
 Sider 3 Lua Module Programmers Guide
 ====================================
-For sider.dll version: 3.3.0
-March 16,2017
+For sider.dll version: 3.3.1
+March 22, 2017
 
 
 
@@ -9,13 +9,13 @@ March 16,2017
 ~~~~~~~~~~~~~~~
 
 The main idea here is to provide a safe and flexible way to 
-expand Sider functionality. It will (eventually) allow modders to
+extend Sider functionality. It will (eventually) allow modders to
 alter many aspects of the game, load all sorts of extra content
 and even do gameplay tweaks. 
 
 Instead of offering a C interface, where the programmers would need 
 to write a DLL, i'm a taking a different approach here and trying to
-design a system, where expansion modules are written in Lua. A module
+design a system, where extension modules are written in Lua. A module
 would typically initialize itself by registering for certain events,
 and then Sider will call the module functions, when those events
 occur later in the game.
@@ -100,24 +100,51 @@ is to understand the context object (ctx).
 ~~~~~~~~~~~~~~~~~
 
 Context object is what Sider "knows" about the current state
-of the game. As of right now, it only contains the following
-fields: home_team, away_team. However, the idea is to eventually
-have it provide all sorts of information, such as: tournament id,
-stadium info, which ball is being used, and so for. This will 
-require some additional investigative work and then building that
-into Sider in the future versions. 
-For 3.3.0 release, this is what the context object has:
+of the game. As more scripts/modules are created by the community
+the context object will probably also change, and include more and more
+information about the game.
+
+As of 3.3.1 release, this is what the context object has:
 
 ctx.home_team  - id of the home team of the current match, after
-                 it is selected in the exhibition match, or time
-                 is advanced in a league mode to the next match.
+                 it is selected in the exhibition match, or the next
+                 match is determined in the league mode.
 
 ctx.away_team  - id of the away team of the current match, after
-                 it is selected in the exhibition match, or time
-                 is advanced in a league mode to the next match.
+                 it is selected in the exhibition match, or the next
+                 match is determined in the league mode.
 
-ctx.tournament_id  -  only known, after "trophy check" event happens.
+ctx.tournament_id  -  numeric id of the current tournament. See
+                      tournaments.txt file for the list ids for some
+                      of the tournaments.
 
+ctx.match_id   - some sort of number, which seems to indicate where
+                 in the season you currently are. However, the exact
+                 meaning of this id is unclear. Maybe you can figure
+                 it out and tell me ;-)
+
+ctx.stadium    - numeric id of the stadium that will be used (or was
+                 last used, if the stadium for the next match hasn't 
+                 been chosen yet by the game logic)
+
+ctx.timeofday  - The values are: 0 - Day, 1 - Night. Same as with
+                 stadium, it represents the time of day of the coming
+                 match, or the last one, if the stadium isn't set yet
+                 for the next match.
+
+ctx.season     - The values are: 0 - Summer, 1 - Winter.
+
+ctx.weather    - The values are: 0 - Fine, 1 - Rainy
+
+ctx.match_time - Duration of the match in minutes. 
+
+
+The context is a simple Lua table, so you can change the values as you
+wish. However, doing so does not really make much sense, because it will
+not affect the game in any way. To actually meaningfully modify these 
+settings, you will need to register for game events, which are described
+further down, and then have your handler functions return appropriate
+values.
 
 The context object also contains a register function, which has the
 following signature:
@@ -130,7 +157,7 @@ which will be called when the corresponding event happens. Parameters
 vary depending on the event - see the next section for details on all
 supported events and their handler signatures
 
-The whole of context object is that in your handler functions, your
+The idea of the context object is that in your handler functions, your
 code will make decisions on what to do, using the information in the
 context.
 
@@ -206,10 +233,6 @@ This event occurs when the game checks the tournament id in order
 to decide which entrance scene to use or which trophy celebration
 to show at the end of the match. It is a very specific event and
 probably is not of much use, other than for the trophy-server module.
-However, it does give you the information about current tournament,
-and sets the "tournament_id" field in the context object. Ideally, the
-tournament id would've been determined earlier, but right now this is
-the only way to find out about it.
 
 
 - Event name: "set_home_team"
@@ -217,8 +240,8 @@ Handler function: f(ctx, team_id)
 Return value expected: nil
 
 This event fires after the home team is determined - either during
-the team selection in exhibition game, or when the time is advanced
-to the next match in a league mode (League, Master League, UCL, etc.)
+the team selection in exhibition game, or when the next match becomes
+known in a league or a cup mode (League, Master League, UCL, etc.)
 The team id is also set as "home_team" field in the context object
 so that it can be used later, if needed.
 
@@ -228,10 +251,51 @@ Handler function: f(ctx, team_id)
 Return value expected: nil
 
 This event fires after the away team is determined - either during
-the team selection in exhibition game, or when the time is advanced
-to the next match in a league mode (League, Master League, UCL, etc.)
+the team selection in exhibition game, or when the next match becomes
+known in a league or a cup mode (League, Master League, UCL, etc.)
 The team id is also set as "away_team" field in the context object
 so that it can be used later, if needed.
+
+
+- Event name: "set_match_time"
+Handler function: f(ctx, minutes)
+Return value expected: nil or integer
+
+This event occurs, when the game sets the mach duration. If your handler
+function returns an integer, then this value will be used as the match
+time in minutes. This way you can accelerate or slow down the matches
+beyound the allowed 5-30 minute range. See timeaccel.lua - for an example
+of such script.
+
+
+- Event name: "set_tournament_id"
+Handler function: f(ctx, tournament_id)
+Return value expected: nil
+
+This event occurs, when the tournament id is determined. Your module
+cannot change this value.
+
+
+- Event name: "set_stadium"
+Handler function: f(ctx, options)
+Return value expected: nil or table
+
+This event fires, when the stadium settings are chosen for the upcoming
+match. The "options" parameter is a Lua table which contains the following 
+keys: "stadium", "timeofday", "weather", "season". Each of these has an
+integer value, as the game uses: for stadium - it is the id of the stadium,
+for timeofday: 0 - means Day, 1 - means Night; 
+for weather: 0 - Fine (sunny), 1 - Rain;
+for season: 0 - Summer, 1 - Winter
+
+You handler function can either return nil, which means that other modules
+can receive the event and process it. Or, the handler can return a table
+of options, which are either modified or not. Returning a table of options
+stops further propagation of the event. If you want to change any of the
+four settings, just assign them different values. Be careful though: sider
+doesn't check for correctness of values, so if you assign a non-existent
+stadium, the game will probably crash or go into infinite "loading" loop.
+For an example usage - see stadium.lua module.
 
 
 
@@ -261,7 +325,7 @@ here is that a module has access to a limited set of globals:
 
 Standard Lua: 
     assert, ipairs, pairs, tostring, tonumber, table,
-    string, math, _G
+    string, math, unpack, type, error, io, os, _VERSION, _G
 Sider: 
     log, _FILE
 
