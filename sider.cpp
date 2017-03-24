@@ -48,8 +48,6 @@ DWORD _tid_addr1 = 0;
 DWORD _tid_target1 = 0;
 DWORD _tid_target2 = 0;
 
-DWORD _write_stadium_org = 0;
-
 int convert_tournament_id2();
 int convert_tournament_id(int id);
 
@@ -74,6 +72,7 @@ static DWORD hookingThreadId = 0;
 static HMODULE myHDLL;
 static HHOOK handle;
 
+int get_context_field_int(const char *name);
 void set_context_field_int(const char *name, int value);
 
 bool trophy_server_make_key(char *file_name, char *key);
@@ -281,6 +280,16 @@ BYTE minutes_pattern[14] =
     "\xc2\x04\x00";
 int minutes_off = 3;
 
+// time clamp pattern
+BYTE time_clamp_pattern[17] =
+    "\xdb\x45\x08"
+    "\xd9\x5d\x08"
+    "\xd9\x45\x08"
+    "\xd9\x56\x54"
+    "\xd9\xe8"
+    "\xd8\xd1";
+BYTE time_clamp_off = 0x36;
+
 // set default settings
 BYTE settings_pattern[16] =
     "\xc7\x06\xff\xff\xff\xff"
@@ -316,11 +325,11 @@ int tid_func_off1 = -5;
 int tid_func_off2 = -0x1c;
 
 // write stadium settings pattern
-BYTE write_stadium_pattern[9] =
-    "\x50"
-    "\x8d\x8b\xa0\x50\x01\x00"
-    "\xe8";
-int write_stadium_off = 7;
+BYTE write_stadium_pattern[18] =
+    "\x8d\x8d\xb0\xfd\xff\xff"
+    "\x51"
+    "\xc7\x85\xfc\xff\xff\xff\xff\xff\xff\xff";
+int write_stadium_off = 0;
 
 bool patched(false);
 bool patched2(false);
@@ -1288,6 +1297,27 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
             log_(L"Enabling set-num-minutes event\n");
             hook_call_point((DWORD)p, minutes_set_cp, 6, 1);
         }
+
+        p = find_code_frag(base, h->Misc.VirtualSize,
+            time_clamp_pattern, sizeof(time_clamp_pattern)-1);
+        if (!p) {
+            log_(L"Unable to patch: (time clamp) code pattern not matched\n");
+        }
+        else {
+            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+            p = p + time_clamp_off;
+
+            DWORD oldProtection = 0;
+            DWORD newProtection = PAGE_EXECUTE_READWRITE;
+
+            if (VirtualProtect(p, 8, newProtection, &oldProtection)) {
+                memcpy(p, "\x90\x90\x90", 3);
+                log_(L"Time clamp (30) disabled.\n");
+            }
+            else {
+                log_(L"PROBLEM with Virtual Protect.\n");
+            }
+        }
     }
 
     // set default exhib settings
@@ -1372,8 +1402,7 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
             p = p + write_stadium_off;
 
             log_(L"Enabling write-stadium event\n");
-            _write_stadium_org = get_target_addr((DWORD)p);
-            hook_call_point((DWORD)p, write_stadium_cp, 7, 0);
+            hook_call_point((DWORD)p, write_stadium_cp, 6, 1);
         }
     }
 
@@ -2269,6 +2298,22 @@ DWORD trophy_map(DWORD tournament_id)
     return res;
 }
 
+int get_context_field_int(const char *name, int default_value)
+{
+    int value = default_value;
+    if (_config->_lua_enabled) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(L, 1); // ctx
+        lua_getfield(L, -1, name);
+        if (lua_isnumber(L, -1)) {
+            value = luaL_checkinteger(L, -1);
+        }
+        lua_pop(L, 2);
+        LeaveCriticalSection(&_cs);
+    }
+    return value;
+}
+
 void set_context_field_int(const char *name, int value)
 {
     if (_config->_lua_enabled) {
@@ -2442,7 +2487,6 @@ void team_info_write_cp()
 
 DWORD minutes_set(DWORD settings_addr, DWORD num_minutes)
 {
-    set_context_field_int("match_time", num_minutes);
     WORD tid = *(WORD*)(settings_addr + 2);
     if (tid != 0xffff) {
         // non-exhibition: try to accelerate events
@@ -2677,13 +2721,8 @@ void write_exhib_id_cp()
 
 DWORD write_stadium(STAD_STRUCT *ss)
 {
-    set_context_field_int("stadium", ss->stadium);
-    set_context_field_int("timeofday", ss->timeofday);
-    set_context_field_int("weather", ss->weather);
-    set_context_field_int("season", ss->season);
-
-    // lua callbacks
     if (_config->_lua_enabled) {
+        // lua callbacks
         list<module_t*>::iterator i;
         for (i = _modules.begin(); i != _modules.end(); i++) {
             module_t *m = *i;
@@ -2691,27 +2730,24 @@ DWORD write_stadium(STAD_STRUCT *ss)
                 break;
             }
         }
+
+        set_context_field_int("stadium", ss->stadium);
+        set_context_field_int("timeofday", ss->timeofday);
+        set_context_field_int("weather", ss->weather);
+        set_context_field_int("season", ss->season);
     }
+
     DBG log_(L"stadium=%d, timeofday=%d, weather=%d, season=%d\n",
         ss->stadium, ss->timeofday, ss->weather, ss->season);
-
-    set_context_field_int("stadium", ss->stadium);
-    set_context_field_int("timeofday", ss->timeofday);
-    set_context_field_int("weather", ss->weather);
-    set_context_field_int("season", ss->season);
     return 0;
 }
 
 void write_stadium_cp()
 {
-    DWORD addr;
     __asm {
         // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
         // apparently checks for stack alignment and bad things happen, if it's not
         // DWORD-aligned. (For example, all file operations fail!)
-        mov addr,ecx
-        push eax
-        call _write_stadium_org
         pushfd
         push ebp
         push eax
@@ -2720,8 +2756,7 @@ void write_stadium_cp()
         push edx
         push esi
         push edi
-        mov ecx,addr
-        push ecx  // staidum options base addr
+        push eax  // stadium base addr
         call write_stadium
         add esp,0x04     // pop parameters
         pop edi
@@ -2732,7 +2767,8 @@ void write_stadium_cp()
         pop eax
         pop ebp
         popfd
-        retn 4
+        lea ecx, dword ptr ds:[ebp-0x250]
+        retn
     }
 }
 

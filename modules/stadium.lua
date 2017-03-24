@@ -1,13 +1,13 @@
 -- Stadium switcher example:
--- for English Super Cup, go to Camp Nou.
+-- for English Super Cup, go to Bombonera.
 
 local m = {}
 
 function m.set_stadium(ctx, options)
     if ctx.tournament_id == 101 then
-        log("Switching to Camp Nou on a rainy winter day")
+        log("Switching to Bombonera on a rainy winter day")
 
-        options.stadium = 2   -- Camp Nou
+        options.stadium = 28  -- Stadium id (Bombonera)
         options.timeofday = 0 -- Day
         options.weather = 1   -- Rain
         options.season = 1    -- Winter
