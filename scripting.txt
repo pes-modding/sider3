@@ -298,6 +298,12 @@ stadium, the game will probably crash or go into infinite "loading" loop.
 For an example usage - see stadium.lua module.
 
 
+NOTE: Some events can fire multiple times for the same "action".
+That is normal, it's just how the game works internally. Typically, you
+do not need to worry about it, but just be aware of this fact, when
+writing your handler functions.
+
+
 
 5. Logging
 ~~~~~~~~~~
