@@ -74,6 +74,7 @@ static HHOOK handle;
 
 int get_context_field_int(const char *name);
 void set_context_field_int(const char *name, int value);
+void set_context_field_nil(const char *name);
 
 bool trophy_server_make_key(char *file_name, char *key);
 wstring *trophy_server_get_filepath(char *file_name, char *key);
@@ -2326,6 +2327,18 @@ void set_context_field_int(const char *name, int value)
     }
 }
 
+void set_context_field_nil(const char *name)
+{
+    if (_config->_lua_enabled) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(L, 1); // ctx
+        lua_pushnil(L);
+        lua_setfield(L, -2, name);
+        lua_pop(L, 1);
+        LeaveCriticalSection(&_cs);
+    }
+}
+
 void set_tid(int tid)
 {
     _curr_tournament_id = tid;
@@ -2340,9 +2353,20 @@ void set_tid(int tid)
     }
 }
 
-void set_mid(WORD mid)
+void set_match_info(DWORD settings_addr)
 {
-    set_context_field_int("match_id", mid);
+    int match_id = (int)*((WORD*)settings_addr);
+    int match_leg = (int)*((BYTE*)settings_addr + 4);
+    int match_info = (int)*((BYTE*)settings_addr + 8);
+
+    if (match_leg == 0 || match_leg == 1) {
+        set_context_field_int("match_leg", match_leg+1);
+    }
+    else {
+        set_context_field_nil("match_leg");
+    }
+    set_context_field_int("match_id", match_id);
+    set_context_field_int("match_info", match_info);
 }
 
 void trophy_map_cp()
@@ -2600,7 +2624,7 @@ DWORD set_defaults(DWORD settings_addr)
     int new_tid = convert_tournament_id2();
     if (new_tid != _curr_tournament_id) {
         if ((new_tid == 0) || (_curr_tournament_id == 0 && new_tid != 6)) {
-            set_mid(*(WORD*)settings_addr);
+            set_match_info(settings_addr);
             set_tid(new_tid);
             DBG log_(L"set-defaults: tournament_id = %d\n",
                 _curr_tournament_id);
@@ -2641,8 +2665,7 @@ void set_defaults_cp()
 
 DWORD write_tournament_id(DWORD settings_addr)
 {
-    WORD mid = *(WORD*)(settings_addr);
-    set_mid(mid);
+    set_match_info(settings_addr);
     WORD tid = *(WORD*)(settings_addr + 2);
     set_tid(convert_tournament_id((int)tid));
     DBG log_(L"tournament_id = %d\n", _curr_tournament_id);
@@ -2736,6 +2759,10 @@ DWORD write_stadium(STAD_STRUCT *ss)
         set_context_field_int("weather", ss->weather);
         set_context_field_int("season", ss->season);
     }
+
+    // sync the thumbnail
+    BYTE *p = (BYTE*)ss - 0x40 + 6;
+    *p = ss->stadium;
 
     DBG log_(L"stadium=%d, timeofday=%d, weather=%d, season=%d\n",
         ss->stadium, ss->timeofday, ss->weather, ss->season);
