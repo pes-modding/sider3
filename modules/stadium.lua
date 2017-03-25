@@ -1,5 +1,6 @@
 -- Stadium switcher example:
 -- for English Super Cup, go to Bombonera.
+-- for UEFA Champions Leaguge Final - to Camp Nou
 
 local m = {}
 
@@ -16,6 +17,13 @@ function m.set_stadium(ctx, options)
         -- that this change is final. This stops processing
         -- of the event and modules further down the list
         -- will not receive this event.
+        return options
+
+    elseif ctx.tournament_id == 13 and ctx.match_info == 53 then
+        log("UEFA CL Final: switching to Camp Nou")
+
+        -- don't change weather/season/timeoday, only stadium
+        options.stadium = 2
         return options
     end
 end

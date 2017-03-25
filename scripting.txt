@@ -1,7 +1,7 @@
 Sider 3 Lua Module Programmers Guide
 ====================================
-For sider.dll version: 3.3.1
-March 22, 2017
+For sider.dll version: 3.3.2
+March 25, 2017
 
 
 
@@ -104,7 +104,7 @@ of the game. As more scripts/modules are created by the community
 the context object will probably also change, and include more and more
 information about the game.
 
-As of 3.3.1 release, this is what the context object has:
+As of 3.3.2 release, this is what the context object has:
 
 ctx.home_team  - id of the home team of the current match, after
                  it is selected in the exhibition match, or the next
@@ -122,6 +122,19 @@ ctx.match_id   - some sort of number, which seems to indicate where
                  in the season you currently are. However, the exact
                  meaning of this id is unclear. Maybe you can figure
                  it out and tell me ;-)
+
+ctx.match_leg  - set to 1 or 2, if this is 1st leg or 2nd leg of
+                 a two-legged knock-out match.
+
+ctx.match_info - meaning of this field varies, depending on the type
+                 of tournament:
+                     league: number of league matches already played
+                     cup/play-off:
+                         51 - quaterfinal,
+                         52 - semifinal,
+                         53 - final
+                 You can use this together with ctx.tournament_id to
+                 identify a final match of a particular tournament.
 
 ctx.stadium    - numeric id of the stadium that will be used (or was
                  last used, if the stadium for the next match hasn't 
