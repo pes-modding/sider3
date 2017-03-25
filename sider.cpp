@@ -2359,7 +2359,7 @@ void set_match_info(DWORD settings_addr)
     int match_leg = (int)*((BYTE*)settings_addr + 4);
     int match_info = (int)*((BYTE*)settings_addr + 8);
 
-    if (match_leg == 0 || match_leg == 1) {
+    if (match_id != 0 && (match_leg == 0 || match_leg == 1)) {
         set_context_field_int("match_leg", match_leg+1);
     }
     else {
@@ -2514,6 +2514,8 @@ DWORD minutes_set(DWORD settings_addr, DWORD num_minutes)
     WORD tid = *(WORD*)(settings_addr + 2);
     if (tid != 0xffff) {
         // non-exhibition: try to accelerate events
+        // match info
+        set_match_info(settings_addr);
         // tournament id
         set_tid(convert_tournament_id(int(tid)));
         DBG log_(L"tournament id: %d\n", _curr_tournament_id);
@@ -2744,6 +2746,9 @@ void write_exhib_id_cp()
 
 DWORD write_stadium(STAD_STRUCT *ss)
 {
+    // update match info
+    set_match_info((DWORD)ss - 0x64);
+
     if (_config->_lua_enabled) {
         // lua callbacks
         list<module_t*>::iterator i;
