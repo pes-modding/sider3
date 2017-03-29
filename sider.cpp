@@ -42,6 +42,9 @@ void set_defaults_cp();
 void write_exhib_id_cp();
 void write_tournament_id_cp();
 void write_stadium_cp();
+void read_ball_name_cp();
+
+char _ball_name[256];
 
 // locations to fill, when hooking
 DWORD _tid_addr1 = 0;
@@ -94,6 +97,7 @@ struct module_t {
     int evt_set_tid;
     int evt_set_match_time;
     int evt_set_stadium;
+    int evt_get_ball_name;
 };
 list<module_t*> _modules;
 module_t* _curr_m;
@@ -166,6 +170,12 @@ struct STAD_STRUCT {
     DWORD timeofday;
     DWORD weather;
     DWORD season;
+};
+
+struct BALLNAME_STRUCT {
+    DWORD dw0;
+    DWORD dw1;
+    char name[0x88];
 };
 
 // original call destination of "lookup_file"
@@ -331,6 +341,22 @@ BYTE write_stadium_pattern[18] =
     "\x51"
     "\xc7\x85\xfc\xff\xff\xff\xff\xff\xff\xff";
 int write_stadium_off = 0;
+
+// read ball name pattern
+BYTE read_ball_name_pattern[26] =
+    "\x30\xc0"
+    "\x5d"
+    "\xc2\x08\x00"
+    "\x8d\x51\x08"
+    "\x89\xd0"
+    "\x56"
+    "\x8d\x70\x01"
+    "\x8a\x08"
+    "\x40"
+    "\x84\xc9"
+    "\x75\xf9"
+    "\x8b\x4d\x0c";
+int read_ball_name_off = 6;
 
 bool patched(false);
 bool patched2(false);
@@ -923,6 +949,12 @@ static int sider_context_register(lua_State *L)
         _curr_m->evt_set_stadium = lua_gettop(_curr_m->L);
         logu_("Registered for \"%s\" event\n", event_key);
     }
+    else if (strcmp(event_key, "get_ball_name")==0) {
+        lua_pushvalue(L, -1);
+        lua_xmove(L, _curr_m->L, 1);
+        _curr_m->evt_get_ball_name = lua_gettop(_curr_m->L);
+        logu_("Registered for \"%s\" event\n", event_key);
+    }
     else {
         logu_("WARN: trying to register for unknown event: \"%s\"\n",
             event_key);
@@ -1407,6 +1439,22 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
         }
     }
 
+    // read ball name
+    {
+        BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
+            read_ball_name_pattern, sizeof(read_ball_name_pattern)-1);
+        if (!p) {
+            log_(L"Unable to patch: (read-ball-name) code pattern not matched\n");
+        }
+        else {
+            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+            p = p + read_ball_name_off;
+
+            log_(L"Enabling read-ball-name event\n");
+            hook_call_point((DWORD)p, read_ball_name_cp, 6, 0);
+        }
+    }
+
     if (_config->_livecpk_enabled) {
         BYTE *frag[5];
         frag[0] = lcpk_pattern_get_file_info;
@@ -1788,6 +1836,32 @@ bool module_set_match_time(module_t *m, DWORD *num_minutes)
             int value = luaL_checkinteger(L, -1);
             *num_minutes = value;
             res = true;
+        }
+        lua_pop(L, 1);
+        LeaveCriticalSection(&_cs);
+    }
+    return res;
+}
+
+char *module_get_ball_name(module_t *m, char *name)
+{
+    char *res = NULL;
+    if (m->evt_get_ball_name != 0) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(m->L, m->evt_get_ball_name);
+        lua_xmove(m->L, L, 1);
+        // push params
+        lua_pushvalue(L, 1); // ctx
+        lua_pushstring(L, name);
+        if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
+            const char *err = luaL_checkstring(L, -1);
+            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
+        }
+        else if (lua_isstring(L, -1)) {
+            const char *s = luaL_checkstring(L, -1);
+            memset(_ball_name, 0, sizeof(_ball_name));
+            strncpy(_ball_name, s, sizeof(_ball_name)-1);
+            res = _ball_name;
         }
         lua_pop(L, 1);
         LeaveCriticalSection(&_cs);
@@ -2800,6 +2874,51 @@ void write_stadium_cp()
         pop ebp
         popfd
         lea ecx, dword ptr ds:[ebp-0x250]
+        retn
+    }
+}
+
+DWORD read_ball_name(BALLNAME_STRUCT *bs)
+{
+    DBG logu_("Read ball name: %s\n", bs->name);
+    // lua callbacks
+    if (_config->_lua_enabled) {
+        list<module_t*>::iterator i;
+        for (i = _modules.begin(); i != _modules.end(); i++) {
+            module_t *m = *i;
+            char *bn = module_get_ball_name(m, bs->name);
+            if (bn) {
+                return (DWORD)bn;
+            }
+        }
+    }
+    return (DWORD)(bs->name);
+}
+
+void read_ball_name_cp()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        pushfd
+        push ebp
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        push ecx  // ball name structure addr
+        call read_ball_name
+        add esp,0x04     // pop parameters
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop ebp
+        popfd
+        mov edx, eax
         retn
     }
 }
