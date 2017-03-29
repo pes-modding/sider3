@@ -37,12 +37,24 @@ function m.set_stadium(ctx, options)
     log(string.format("ctx: %s", t2s(ctx)))
 end
 
+function m.enter_edit_mode(ctx)
+    log("Entered EDIT mode")
+    log(string.format("ctx: %s", t2s(ctx)))
+end
+
+function m.exit_edit_mode(ctx)
+    log("Exited EDIT mode")
+    log(string.format("ctx: %s", t2s(ctx)))
+end
+
 function m.init(ctx)
    ctx.register("set_home_team", m.set_home)
    ctx.register("set_away_team", m.set_away)
    ctx.register("set_tournament_id", m.set_tid)
    ctx.register("set_match_time", m.set_match_time)
    ctx.register("set_stadium", m.set_stadium)
+   ctx.register("enter_edit_mode", m.enter_edit_mode)
+   ctx.register("exit_edit_mode", m.exit_edit_mode)
 end
 
 return m
