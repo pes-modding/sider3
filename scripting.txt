@@ -1,7 +1,7 @@
 Sider 3 Lua Module Programmers Guide
 ====================================
 For sider.dll version: 3.3.3
-March 28, 2017
+March 29, 2017
 
 
 
@@ -150,6 +150,10 @@ ctx.season     - The values are: 0 - Summer, 1 - Winter.
 ctx.weather    - The values are: 0 - Fine, 1 - Rainy
 
 ctx.match_time - Duration of the match in minutes. 
+
+ctx.is_edit_mode  -  The gets set to true, when the game enters
+                     the Edit mode. When the player return back to
+                     main menu, the field is set to nil
 
 
 The context is a simple Lua table, so you can change the values as you
@@ -319,6 +323,22 @@ This event fires, when the game prepares to display the ball name.
 Your handler function can change it, if it returns a string instead of nil.
 The string needs to be in UTF-8 encoding to correctly render non-ASCII
 characters.
+
+
+-- Event name: "enter_edit_mode"
+Handler function: f(ctx)
+Return value expected: nil
+
+This event fires when user enters the game's Edit Mode. There is also
+a boolean field in the context object that is set to true: "is_edit_mode".
+
+
+-- Event name: "exit_edit_mode"
+Handler function: f(ctx)
+Return value expected: nil
+
+This event fires when user exits the game's Edit Mode. The boolean
+field "is_edit_mode" is removed from the context (set to nil).
 
 
 NOTE: Some events can fire multiple times for the same "action".
