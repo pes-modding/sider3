@@ -43,6 +43,8 @@ void write_exhib_id_cp();
 void write_tournament_id_cp();
 void write_stadium_cp();
 void read_ball_name_cp();
+void enter_edit_mode_cp();
+void exit_edit_mode_cp();
 
 char _ball_name[256];
 
@@ -76,6 +78,7 @@ static HMODULE myHDLL;
 static HHOOK handle;
 
 int get_context_field_int(const char *name);
+void set_context_field_boolean(const char *name, bool value);
 void set_context_field_int(const char *name, int value);
 void set_context_field_nil(const char *name);
 
@@ -98,6 +101,8 @@ struct module_t {
     int evt_set_match_time;
     int evt_set_stadium;
     int evt_get_ball_name;
+    int evt_enter_edit_mode;
+    int evt_exit_edit_mode;
 };
 list<module_t*> _modules;
 module_t* _curr_m;
@@ -357,6 +362,20 @@ BYTE read_ball_name_pattern[26] =
     "\x75\xf9"
     "\x8b\x4d\x0c";
 int read_ball_name_off = 6;
+
+// edit mode pattern
+BYTE edit_mode_pattern[] =
+    "\x56"
+    "\x89\xce"
+    "\x8b\x86\xc8\x00\x00\x00"
+    "\x83\xe8\x00"
+    "\x74\x46"
+    "\x83\xe8\x02"
+    "\x74\x2c"
+    "\x83\xe8\x02"
+    "\x75\x59";
+int enter_edit_mode_off = 0x67;
+int exit_edit_mode_off = 0x44;
 
 bool patched(false);
 bool patched2(false);
@@ -955,6 +974,18 @@ static int sider_context_register(lua_State *L)
         _curr_m->evt_get_ball_name = lua_gettop(_curr_m->L);
         logu_("Registered for \"%s\" event\n", event_key);
     }
+    else if (strcmp(event_key, "enter_edit_mode")==0) {
+        lua_pushvalue(L, -1);
+        lua_xmove(L, _curr_m->L, 1);
+        _curr_m->evt_enter_edit_mode = lua_gettop(_curr_m->L);
+        logu_("Registered for \"%s\" event\n", event_key);
+    }
+    else if (strcmp(event_key, "exit_edit_mode")==0) {
+        lua_pushvalue(L, -1);
+        lua_xmove(L, _curr_m->L, 1);
+        _curr_m->evt_exit_edit_mode = lua_gettop(_curr_m->L);
+        logu_("Registered for \"%s\" event\n", event_key);
+    }
     else {
         logu_("WARN: trying to register for unknown event: \"%s\"\n",
             event_key);
@@ -1455,6 +1486,24 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
         }
     }
 
+    // edit mode
+    {
+        BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
+            edit_mode_pattern, sizeof(edit_mode_pattern)-1);
+        if (!p) {
+            log_(L"Unable to patch: (edit-mode) code pattern not matched\n");
+        }
+        else {
+            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+            log_(L"Enabling edit-mode context flag\n");
+
+            hook_call_point((DWORD)(p + enter_edit_mode_off),
+                enter_edit_mode_cp, 6, 5);
+            hook_call_point((DWORD)(p + exit_edit_mode_off),
+                exit_edit_mode_cp, 6, 5);
+        }
+    }
+
     if (_config->_livecpk_enabled) {
         BYTE *frag[5];
         frag[0] = lcpk_pattern_get_file_info;
@@ -1864,6 +1913,44 @@ char *module_get_ball_name(module_t *m, char *name)
             res = _ball_name;
         }
         lua_pop(L, 1);
+        LeaveCriticalSection(&_cs);
+    }
+    return res;
+}
+
+char *module_enter_edit_mode(module_t *m)
+{
+    char *res = NULL;
+    if (m->evt_enter_edit_mode != 0) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(m->L, m->evt_enter_edit_mode);
+        lua_xmove(m->L, L, 1);
+        // push params
+        lua_pushvalue(L, 1); // ctx
+        if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
+            const char *err = luaL_checkstring(L, -1);
+            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
+            lua_pop(L, 1);
+        }
+        LeaveCriticalSection(&_cs);
+    }
+    return res;
+}
+
+char *module_exit_edit_mode(module_t *m)
+{
+    char *res = NULL;
+    if (m->evt_exit_edit_mode != 0) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(m->L, m->evt_exit_edit_mode);
+        lua_xmove(m->L, L, 1);
+        // push params
+        lua_pushvalue(L, 1); // ctx
+        if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
+            const char *err = luaL_checkstring(L, -1);
+            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
+            lua_pop(L, 1);
+        }
         LeaveCriticalSection(&_cs);
     }
     return res;
@@ -2413,6 +2500,18 @@ void set_context_field_nil(const char *name)
     }
 }
 
+void set_context_field_boolean(const char *name, bool value)
+{
+    if (_config->_lua_enabled) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(L, 1); // ctx
+        lua_pushboolean(L, (value)?1:0);
+        lua_setfield(L, -2, name);
+        lua_pop(L, 1);
+        LeaveCriticalSection(&_cs);
+    }
+}
+
 void set_tid(int tid)
 {
     _curr_tournament_id = tid;
@@ -2919,6 +3018,90 @@ void read_ball_name_cp()
         pop ebp
         popfd
         mov edx, eax
+        retn
+    }
+}
+
+DWORD enter_edit_mode()
+{
+    set_context_field_boolean("is_edit_mode", true);
+    // lua callbacks
+    if (_config->_lua_enabled) {
+        list<module_t*>::iterator i;
+        for (i = _modules.begin(); i != _modules.end(); i++) {
+            module_t *m = *i;
+            module_enter_edit_mode(m);
+        }
+    }
+    return 0;
+}
+
+DWORD exit_edit_mode()
+{
+    set_context_field_nil("is_edit_mode");
+    // lua callbacks
+    if (_config->_lua_enabled) {
+        list<module_t*>::iterator i;
+        for (i = _modules.begin(); i != _modules.end(); i++) {
+            module_t *m = *i;
+            module_exit_edit_mode(m);
+        }
+    }
+    return 0;
+}
+
+void enter_edit_mode_cp()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        pushfd
+        push ebp
+        push eax
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        call enter_edit_mode
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop eax
+        pop ebp
+        popfd
+        mov dword ptr ds:[esi+0xc8], 1
+        retn
+    }
+}
+
+void exit_edit_mode_cp()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        pushfd
+        push ebp
+        push eax
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        call exit_edit_mode
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop eax
+        pop ebp
+        popfd
+        mov dword ptr ds:[esi+0xc8], 4
         retn
     }
 }
