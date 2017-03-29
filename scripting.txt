@@ -1,7 +1,7 @@
 Sider 3 Lua Module Programmers Guide
 ====================================
-For sider.dll version: 3.3.2
-March 25, 2017
+For sider.dll version: 3.3.3
+March 28, 2017
 
 
 
@@ -104,7 +104,7 @@ of the game. As more scripts/modules are created by the community
 the context object will probably also change, and include more and more
 information about the game.
 
-As of 3.3.2 release, this is what the context object has:
+As of 3.3.3 release, this is what the context object has:
 
 ctx.home_team  - id of the home team of the current match, after
                  it is selected in the exhibition match, or the next
@@ -309,6 +309,16 @@ four settings, just assign them different values. Be careful though: sider
 doesn't check for correctness of values, so if you assign a non-existent
 stadium, the game will probably crash or go into infinite "loading" loop.
 For an example usage - see stadium.lua module.
+
+
+-- Event name: "get_ball_name"
+Handler function: f(ctx, ballname)
+Return value expected: nil or string
+
+This event fires, when the game prepares to display the ball name.
+Your handler function can change it, if it returns a string instead of nil.
+The string needs to be in UTF-8 encoding to correctly render non-ASCII
+characters.
 
 
 NOTE: Some events can fire multiple times for the same "action".
