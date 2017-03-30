@@ -57,6 +57,7 @@ DWORD _tid_target2 = 0;
 int convert_tournament_id2();
 int convert_tournament_id(int id);
 
+bool _is_edit_mode(false);
 int _curr_tournament_id(0);
 bool _replace_trophy(false);
 
@@ -1224,6 +1225,7 @@ DWORD install_func(LPVOID thread_param) {
     logu_("UTF-8 check: ленинградское время ноль часов ноль минут.\n");
 
     _is_game = true;
+    _is_edit_mode = false;
 
     InitializeCriticalSection(&_cs);
 
@@ -2048,9 +2050,8 @@ char *module_get_ball_name(module_t *m, char *name)
     return res;
 }
 
-char *module_enter_edit_mode(module_t *m)
+void module_enter_edit_mode(module_t *m)
 {
-    char *res = NULL;
     if (m->evt_enter_edit_mode != 0) {
         EnterCriticalSection(&_cs);
         lua_pushvalue(m->L, m->evt_enter_edit_mode);
@@ -2064,12 +2065,10 @@ char *module_enter_edit_mode(module_t *m)
         }
         LeaveCriticalSection(&_cs);
     }
-    return res;
 }
 
-char *module_exit_edit_mode(module_t *m)
+void module_exit_edit_mode(module_t *m)
 {
-    char *res = NULL;
     if (m->evt_exit_edit_mode != 0) {
         EnterCriticalSection(&_cs);
         lua_pushvalue(m->L, m->evt_exit_edit_mode);
@@ -2083,7 +2082,6 @@ char *module_exit_edit_mode(module_t *m)
         }
         LeaveCriticalSection(&_cs);
     }
-    return res;
 }
 
 bool module_set_stadium(module_t *m, STAD_STRUCT *ss)
@@ -3155,6 +3153,11 @@ void read_ball_name_cp()
 DWORD enter_edit_mode()
 {
     set_context_field_boolean("is_edit_mode", true);
+    if (_is_edit_mode) {
+        // if already in edit mode, do not trigger callbacks again
+        return 0;
+    }
+    _is_edit_mode = true;
     // lua callbacks
     if (_config->_lua_enabled) {
         list<module_t*>::iterator i;
@@ -3169,6 +3172,7 @@ DWORD enter_edit_mode()
 DWORD exit_edit_mode()
 {
     set_context_field_nil("is_edit_mode");
+    _is_edit_mode = false;
     // lua callbacks
     if (_config->_lua_enabled) {
         list<module_t*>::iterator i;
