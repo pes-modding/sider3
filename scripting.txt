@@ -399,15 +399,20 @@ may prove useful if you're doing some advanced modding.
 
 For example, you need some game state info that is not available in
 sider's context object and isn't communicated through events either.
+Or you want to modify some bytes in memory, because you feel really
+adventurous.
 
 
-************************************************************
-************************************************************
-IMPORTANT WARNING:
-THESE ARE "NUCLEAR" TOOLS, SO PLEASE USE THEM WITH CARE.
-IF AND ONLY IF YOU KNOW WHAT YOU'RE DOING. REALLY.
-************************************************************
-************************************************************
+**********************************************************************
+**********************************************************************
+IMPORTANT WARNING: PLEASE USE THIS LIBRARY WITH CARE AND CAUTION,
+AND IF AND ONLY IF YOU KNOW WHAT YOU'RE DOING. REALLY.
+
+THESE ARE POWERFUL TOOLS, BUT THERE ARE ALSO DANGEROUS, BECAUSE
+WRITING INTO A WRONG PLACE IN MEMORY CAN HAVE DISASTROUS CONSEQUENCES.
+ALWAYS TRY TO HAVE A BACKUP COPY OF YOUR EDIT DATA AND SAVEGAME FILES.
+**********************************************************************
+**********************************************************************
 
 
 memory.read(addr, n)
