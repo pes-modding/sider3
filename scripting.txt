@@ -1,7 +1,7 @@
 Sider 3 Lua Module Programmers Guide
 ====================================
 For sider.dll version: 3.3.3
-March 29, 2017
+March 30, 2017
 
 
 
@@ -376,7 +376,7 @@ Standard Lua:
     assert, ipairs, pairs, tostring, tonumber, table,
     string, math, unpack, type, error, io, os, _VERSION, _G
 Sider: 
-    log, _FILE
+    log, memory, _FILE
 
 You can also enable "ffi" and "bit" modules, which are LuaJIT
 extensions. By default, they are disabled. To enable, modify your
@@ -388,4 +388,44 @@ By the way, your module can "investigate" and find out what exactly
 is available for it to use - this is not hard, and is left as an
 exercise for the reader ;-) Or... you can cheat, and look at env.lua
 module.
+
+
+
+7. Memory library
+~~~~~~~~~~~~~~~~~
+
+The "memory" library provides a set of low-level functions that
+may prove useful if you're doing some advanced modding.
+
+For example, you need some game state info that is not available in
+sider's context object and isn't communicated through events either.
+
+
+************************************************************
+************************************************************
+IMPORTANT WARNING:
+THESE ARE "NUCLEAR" TOOLS, SO PLEASE USE THEM WITH CARE.
+IF AND ONLY IF YOU KNOW WHAT YOU'RE DOING. REALLY.
+************************************************************
+************************************************************
+
+
+memory.read(addr, n)
+
+This function reads (n) bytes at memory address (addr).
+Return value: string of n bytes at given memory address
+
+
+memory.write(addr, str)
+
+This function writes the string of bytes (str) at the address (addr).
+Return value: nil
+
+
+memory.search(str, start_addr, end_addr)
+
+This function searches for the string of bytes (str), in the range
+of memory addresses between start_addr and end_addr.
+Return value: address, at which the string of bytes was found 
+              or nil, if the string was not found.
 
