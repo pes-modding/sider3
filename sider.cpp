@@ -25,6 +25,7 @@ using namespace std;
 lua_State *L = NULL;
 CRITICAL_SECTION _cs;
 
+BYTE* find_code_frag(BYTE *base, DWORD max_offset, BYTE *frag, size_t frag_len);
 static DWORD get_target_addr(DWORD call_location);
 static void hook_call_point(DWORD addr, void* func, int codeShift, int numNops, bool addRetn=false);
 
@@ -364,7 +365,7 @@ BYTE read_ball_name_pattern[26] =
 int read_ball_name_off = 6;
 
 // edit mode pattern
-BYTE edit_mode_pattern[] =
+BYTE edit_mode_pattern[25] =
     "\x56"
     "\x89\xce"
     "\x8b\x86\xc8\x00\x00\x00"
@@ -697,6 +698,122 @@ static int sider_log(lua_State *L) {
     lua_pop(L, 2);
     return 0;
 }
+
+static int memory_read(lua_State *L)
+{
+    EnterCriticalSection(&_cs);
+    if (!lua_isnumber(L, 1)) {
+        lua_pushstring(L, "First argument (address) must be a number");
+        LeaveCriticalSection(&_cs);
+        return lua_error(L);
+    }
+    if (!lua_isnumber(L, 2)) {
+        lua_pushstring(L, "Second argument (bytes-count) must be a number");
+        LeaveCriticalSection(&_cs);
+        return lua_error(L);
+    }
+    int addr = luaL_checkinteger(L, 1);
+    int bytes_count = luaL_checkinteger(L, 2);
+    lua_pop(L, 2);
+    DWORD newProtection = PAGE_EXECUTE_READWRITE;
+    DWORD oldProtection;
+    if (VirtualProtect(
+        (BYTE*)addr, bytes_count, newProtection, &oldProtection)) {
+        char *tmp = new char[bytes_count];
+        memcpy(tmp, (BYTE*)addr, (size_t)bytes_count);
+        VirtualProtect((BYTE*)addr, bytes_count, oldProtection, NULL);
+        lua_pushlstring(L, tmp, bytes_count);
+        delete tmp;
+    }
+    else {
+        lua_pushfstring(L,
+            "Problem with VirtualProtect for address: %08x", addr);
+        LeaveCriticalSection(&_cs);
+        return lua_error(L);
+    }
+    LeaveCriticalSection(&_cs);
+    return 1;
+}
+
+static int memory_write(lua_State *L)
+{
+    EnterCriticalSection(&_cs);
+    if (!lua_isnumber(L, 1)) {
+        lua_pushstring(L, "First argument (address) must be a number");
+        LeaveCriticalSection(&_cs);
+        return lua_error(L);
+    }
+    if (!lua_isstring(L, 2)) {
+        lua_pushstring(L, "Second argument (data) must be a string");
+        LeaveCriticalSection(&_cs);
+        return lua_error(L);
+    }
+    int addr = luaL_checkinteger(L, 1);
+    size_t data_len = 0;
+    char *data = strdup(luaL_checklstring(L, 2, &data_len));
+    lua_pop(L, 2);
+    if (data && data_len > 0) {
+        DWORD newProtection = PAGE_EXECUTE_READWRITE;
+        DWORD oldProtection;
+        if (VirtualProtect(
+            (BYTE*)addr, data_len, newProtection, &oldProtection)) {
+            memcpy((BYTE*)addr, data, data_len);
+            VirtualProtect((BYTE*)addr, data_len, oldProtection, NULL);
+        }
+        else {
+            lua_pushfstring(L,
+                "Problem with VirtualProtect for address: %08x", addr);
+            LeaveCriticalSection(&_cs);
+            free(data);
+            return lua_error(L);
+        }
+    }
+    LeaveCriticalSection(&_cs);
+    free(data);
+    return 0;
+}
+
+static int memory_search(lua_State *L)
+{
+    EnterCriticalSection(&_cs);
+    if (!lua_isstring(L, 1)) {
+        lua_pushstring(L, "First argument must be a string");
+        LeaveCriticalSection(&_cs);
+        return lua_error(L);
+    }
+    if (!lua_isnumber(L, 2)) {
+        lua_pushstring(L, "Second argument (start_addr) must be a number");
+        LeaveCriticalSection(&_cs);
+        return lua_error(L);
+    }
+    if (!lua_isnumber(L, 3)) {
+        lua_pushstring(L, "Third argument (end_addr) must be a number");
+        LeaveCriticalSection(&_cs);
+        return lua_error(L);
+    }
+    size_t len = 0;
+    const char *str = luaL_checklstring(L, 1, &len);
+    BYTE *data = new BYTE[len];
+    memcpy(data, str, len);
+    int start_addr = luaL_checkinteger(L, 2);
+    int end_addr = luaL_checkinteger(L, 3);
+    lua_pop(L, 3);
+    if (len > 0) {
+        BYTE *p = find_code_frag(
+            (BYTE*)start_addr, end_addr - start_addr, data, len);
+        if (p) {
+            lua_pushinteger(L, (int)p);
+            LeaveCriticalSection(&_cs);
+            delete data;
+            return 1;
+        }
+    }
+    lua_pushnil(L);
+    LeaveCriticalSection(&_cs);
+    delete data;
+    return 1;
+}
+
 
 void read_configuration(config_t*& config)
 {
@@ -1061,6 +1178,19 @@ static void push_env_table(lua_State *L, const wchar_t *script_name)
     lua_pushstring(L, sname);
     Utf8::free(sname);
     lua_settable(L, -3);
+
+    // memory lib
+    lua_newtable(L);
+    lua_pushstring(L, "read");
+    lua_pushcclosure(L, memory_read, 0);
+    lua_settable(L, -3);
+    lua_pushstring(L, "write");
+    lua_pushcclosure(L, memory_write, 0);
+    lua_settable(L, -3);
+    lua_pushstring(L, "search");
+    lua_pushcclosure(L, memory_search, 0);
+    lua_settable(L, -3);
+    lua_setfield(L, -2, "memory");
 
     // set _G
     lua_pushvalue(L, -1);
