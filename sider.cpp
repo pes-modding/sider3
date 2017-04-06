@@ -102,6 +102,7 @@ struct module_t {
     int evt_set_tid;
     int evt_set_match_time;
     int evt_set_stadium;
+    int evt_set_stadium_options;
     int evt_get_ball_name;
     int evt_enter_edit_mode;
     int evt_exit_edit_mode;
@@ -1084,6 +1085,12 @@ static int sider_context_register(lua_State *L)
         lua_pushvalue(L, -1);
         lua_xmove(L, _curr_m->L, 1);
         _curr_m->evt_set_stadium = lua_gettop(_curr_m->L);
+        logu_("Registered for \"%s\" event\n", event_key);
+    }
+    else if (strcmp(event_key, "set_stadium_options")==0) {
+        lua_pushvalue(L, -1);
+        lua_xmove(L, _curr_m->L, 1);
+        _curr_m->evt_set_stadium_options = lua_gettop(_curr_m->L);
         logu_("Registered for \"%s\" event\n", event_key);
     }
     else if (strcmp(event_key, "get_ball_name")==0) {
@@ -2112,6 +2119,42 @@ bool module_set_stadium(module_t *m, STAD_STRUCT *ss)
                 ss->stadium = luaL_checkinteger(L, -1);
             }
             lua_pop(L, 1);
+            res = true;
+        }
+        else if (lua_isnumber(L, -1)) {
+            ss->stadium = luaL_checkinteger(L, -1);
+            lua_pop(L, 1);
+            res = true;
+        }
+        lua_pop(L, 1);
+        LeaveCriticalSection(&_cs);
+    }
+    return res;
+}
+
+bool module_set_stadium_options(module_t *m, STAD_STRUCT *ss)
+{
+    bool res(false);
+    if (m->evt_set_stadium_options != 0) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(m->L, m->evt_set_stadium_options);
+        lua_xmove(m->L, L, 1);
+        // push params
+        lua_pushvalue(L, 1); // ctx
+        lua_newtable(L);
+        lua_pushinteger(L, ss->stadium);
+        lua_setfield(L, -2, "stadium");
+        lua_pushinteger(L, ss->timeofday);
+        lua_setfield(L, -2, "timeofday");
+        lua_pushinteger(L, ss->weather);
+        lua_setfield(L, -2, "weather");
+        lua_pushinteger(L, ss->season);
+        lua_setfield(L, -2, "season");
+        if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
+            const char *err = luaL_checkstring(L, -1);
+            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
+        }
+        else if (lua_istable(L, -1)) {
             lua_getfield(L, -1, "timeofday");
             if (lua_isnumber(L, -1)) {
                 ss->timeofday = luaL_checkinteger(L, -1);
@@ -3056,6 +3099,12 @@ DWORD write_stadium(STAD_STRUCT *ss)
         for (i = _modules.begin(); i != _modules.end(); i++) {
             module_t *m = *i;
             if (module_set_stadium(m, ss)) {
+                break;
+            }
+        }
+        for (i = _modules.begin(); i != _modules.end(); i++) {
+            module_t *m = *i;
+            if (module_set_stadium_options(m, ss)) {
                 break;
             }
         }

@@ -295,6 +295,33 @@ cannot change this value.
 
 - Event name: "set_stadium"
 Handler function: f(ctx, options)
+Return value expected: nil or number or table
+
+This event fires, when the stadium settings are chosen for the upcoming
+match. The "options" parameter is a Lua table which contains the following
+keys: "stadium", "timeofday", "weather", "season". Each of these has an
+integer value, as the game uses: for stadium - it is the id of the stadium,
+for timeofday: 0 - means Day, 1 - means Night;
+for weather: 0 - Fine (sunny), 1 - Rain;
+for season: 0 - Summer, 1 - Winter
+
+You handler function can either return nil, which means that other modules
+can receive the event and process it. Or, the handler can return an stadium
+id - an integer - to switch the stadium to another one. Be careful though:
+sider doesn't check for correctness of values, so if you switch to a
+non-existent stadium, the game will probably crash or go into infinite
+"loading" loop. For an example usage - see stadium.lua module.
+
+( For backwards compatibility, returning a table like this:
+{ stadium = <stadium-id> } is also supported. However, any other keys in
+that table will be ignored. )
+
+To change weather, timeofday and season - use a new event, called:
+"set_stadium_options", which is documented further down in this document.
+
+
+- Event name: "set_stadium_options"
+Handler function: f(ctx, options)
 Return value expected: nil or table
 
 This event fires, when the stadium settings are chosen for the upcoming
@@ -308,10 +335,9 @@ for season: 0 - Summer, 1 - Winter
 You handler function can either return nil, which means that other modules
 can receive the event and process it. Or, the handler can return a table
 of options, which are either modified or not. Returning a table of options
-stops further propagation of the event. If you want to change any of the
-four settings, just assign them different values. Be careful though: sider
-doesn't check for correctness of values, so if you assign a non-existent
-stadium, the game will probably crash or go into infinite "loading" loop.
+stops further propagation of the event. You cannot change the stadium id -
+for that use "set_stadium" event. But you can change any of the other
+three settings: just assign them different values.
 For an example usage - see stadium.lua module.
 
 
