@@ -15,7 +15,7 @@ function m.set_stadium(ctx, options)
     end
 end
 
-function m.set_stadium_options(ctx, options)
+function m.set_conditions(ctx, options)
     if ctx.tournament_id == 101 then
         log("English Super Cup: it is a rainy winter day ...")
 
@@ -37,7 +37,7 @@ end
 
 function m.init(ctx)
    ctx.register("set_stadium", m.set_stadium)
-   ctx.register("set_stadium_options", m.set_stadium_options)
+   ctx.register("set_conditions", m.set_conditions)
 end
 
 return m
