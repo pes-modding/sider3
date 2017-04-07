@@ -1,7 +1,7 @@
 Sider 3 Lua Module Programmers Guide
 ====================================
 For sider.dll version: 3.3.4
-April 6, 2017
+April 7, 2017
 
 
 
@@ -347,6 +347,16 @@ Return value expected: nil or string
 
 This event fires, when the game prepares to display the ball name.
 Your handler function can change it, if it returns a string instead of nil.
+The string needs to be in UTF-8 encoding to correctly render non-ASCII
+characters.
+
+
+-- Event name: "get_stadium_name"
+Handler function: f(ctx, stadium_name, stadium_id)
+Return value expected: nil or string
+
+This event fires, when the game prepares to display the stadium name.
+You handler function can change it, if it returns a string instead of nil.
 The string needs to be in UTF-8 encoding to correctly render non-ASCII
 characters.
 
