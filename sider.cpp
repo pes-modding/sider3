@@ -106,7 +106,7 @@ struct module_t {
     int evt_set_tid;
     int evt_set_match_time;
     int evt_set_stadium;
-    int evt_set_stadium_options;
+    int evt_set_conditions;
     int evt_get_ball_name;
     int evt_get_stadium_name;
     int evt_enter_edit_mode;
@@ -1131,10 +1131,10 @@ static int sider_context_register(lua_State *L)
         _curr_m->evt_set_stadium = lua_gettop(_curr_m->L);
         logu_("Registered for \"%s\" event\n", event_key);
     }
-    else if (strcmp(event_key, "set_stadium_options")==0) {
+    else if (strcmp(event_key, "set_conditions")==0) {
         lua_pushvalue(L, -1);
         lua_xmove(L, _curr_m->L, 1);
-        _curr_m->evt_set_stadium_options = lua_gettop(_curr_m->L);
+        _curr_m->evt_set_conditions = lua_gettop(_curr_m->L);
         logu_("Registered for \"%s\" event\n", event_key);
     }
     else if (strcmp(event_key, "get_ball_name")==0) {
@@ -2251,12 +2251,12 @@ bool module_set_stadium(module_t *m, STAD_STRUCT *ss)
     return res;
 }
 
-bool module_set_stadium_options(module_t *m, STAD_STRUCT *ss)
+bool module_set_conditions(module_t *m, STAD_STRUCT *ss)
 {
     bool res(false);
-    if (m->evt_set_stadium_options != 0) {
+    if (m->evt_set_conditions != 0) {
         EnterCriticalSection(&_cs);
-        lua_pushvalue(m->L, m->evt_set_stadium_options);
+        lua_pushvalue(m->L, m->evt_set_conditions);
         lua_xmove(m->L, L, 1);
         // push params
         lua_pushvalue(L, 1); // ctx
@@ -3249,7 +3249,7 @@ DWORD write_stadium(STAD_STRUCT *ss)
         }
         for (i = _modules.begin(); i != _modules.end(); i++) {
             module_t *m = *i;
-            if (module_set_stadium_options(m, ss)) {
+            if (module_set_conditions(m, ss)) {
                 break;
             }
         }
