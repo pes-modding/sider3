@@ -317,10 +317,10 @@ non-existent stadium, the game will probably crash or go into infinite
 that table will be ignored. )
 
 To change weather, timeofday and season - use a new event, called:
-"set_stadium_options", which is documented further down in this document.
+"set_conditions", which is documented further down in this document.
 
 
-- Event name: "set_stadium_options"
+- Event name: "set_conditions"
 Handler function: f(ctx, options)
 Return value expected: nil or table
 
@@ -359,6 +359,12 @@ This event fires, when the game prepares to display the stadium name.
 You handler function can change it, if it returns a string instead of nil.
 The string needs to be in UTF-8 encoding to correctly render non-ASCII
 characters.
+
+NOTE: If the stadium was switched earlier to a stadium id that the
+game does not know about (for example, by stadium-server module, which
+serves files from its own root), then stadium_name will be an empty
+string and stadium_id will be 0. However, it is still ok to return a
+new name in this scenario, and the new name will be used for display.
 
 
 -- Event name: "enter_edit_mode"
