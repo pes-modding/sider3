@@ -43,7 +43,7 @@ function m.set_stadium(ctx, options)
     tlog("ctx: %s", t2s(ctx))
 end
 
-function m.set_stadium_options(ctx, options)
+function m.set_conditions(ctx, options)
     tlog("stadium options: %s", t2s(options))
     tlog("ctx: %s", t2s(ctx))
 end
@@ -64,7 +64,7 @@ function m.init(ctx)
    ctx.register("set_tournament_id", m.set_tid)
    ctx.register("set_match_time", m.set_match_time)
    ctx.register("set_stadium", m.set_stadium)
-   ctx.register("set_stadium_options", m.set_stadium_options)
+   ctx.register("set_conditions", m.set_conditions)
    ctx.register("enter_edit_mode", m.enter_edit_mode)
    ctx.register("exit_edit_mode", m.exit_edit_mode)
 end
