@@ -2855,6 +2855,10 @@ void team_info_write_cp()
 
 DWORD minutes_set(DWORD settings_addr, DWORD num_minutes)
 {
+    if (num_minutes == 0) {
+        // invalid scenario
+        return 0;
+    }
     WORD tid = *(WORD*)(settings_addr + 2);
     if (tid != 0xffff) {
         // non-exhibition: try to accelerate events
