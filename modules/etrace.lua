@@ -12,44 +12,50 @@ local function t2s(t)
     return string.format("{%s}", table.concat(parts,", "))
 end
 
+-- utility function to log message with a timestamp
+local function tlog(...)
+    local msg = string.format(...)
+    log(string.format("%s | %s", os.date("%Y-%m-%d %H:%M:%S"), msg))
+end
+
 function m.set_home(ctx, id)
-    log(string.format("home team: %d", id))
-    log(string.format("ctx: %s", t2s(ctx)))
+    tlog("home team: %d", id)
+    tlog("ctx: %s", t2s(ctx))
 end
 
 function m.set_away(ctx, id)
-    log(string.format("away team: %d", id))
-    log(string.format("ctx: %s", t2s(ctx)))
+    tlog("away team: %d", id)
+    tlog("ctx: %s", t2s(ctx))
 end
 
 function m.set_match_time(ctx, minutes)
-    log(string.format("match time: %d", minutes))
-    log(string.format("ctx: %s", t2s(ctx)))
+    tlog("match time: %d", minutes)
+    tlog("ctx: %s", t2s(ctx))
 end
 
 function m.set_tid(ctx, tid)
-    log(string.format("tournament_id: %d", tid))
-    log(string.format("ctx: %s", t2s(ctx)))
+    tlog("tournament_id: %d", tid)
+    tlog("ctx: %s", t2s(ctx))
 end
 
 function m.set_stadium(ctx, options)
-    log(string.format("stadium: %s", options.stadium))
-    log(string.format("ctx: %s", t2s(ctx)))
+    tlog("stadium: %s", options.stadium)
+    tlog("ctx: %s", t2s(ctx))
 end
 
 function m.set_stadium_options(ctx, options)
-    log(string.format("stadium options: %s", t2s(options)))
-    log(string.format("ctx: %s", t2s(ctx)))
+    tlog("stadium options: %s", t2s(options))
+    tlog("ctx: %s", t2s(ctx))
 end
 
 function m.enter_edit_mode(ctx)
-    log("Entered EDIT mode")
-    log(string.format("ctx: %s", t2s(ctx)))
+    tlog("Entered EDIT mode")
+    tlog("ctx: %s", t2s(ctx))
 end
 
 function m.exit_edit_mode(ctx)
-    log("Exited EDIT mode")
-    log(string.format("ctx: %s", t2s(ctx)))
+    tlog("Exited EDIT mode")
+    tlog("ctx: %s", t2s(ctx))
 end
 
 function m.init(ctx)
