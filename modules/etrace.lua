@@ -44,7 +44,7 @@ function m.set_stadium(ctx, options)
 end
 
 function m.set_conditions(ctx, options)
-    tlog("stadium options: %s", t2s(options))
+    tlog("conditions: %s", t2s(options))
     tlog("ctx: %s", t2s(ctx))
 end
 
