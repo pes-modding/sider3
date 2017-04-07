@@ -151,8 +151,8 @@ CREDITS:
 --------
 Game research by nesa24 and juce
 Sider is written by juce and nesa24
+tournaments.txt: ids researched by kilay and other Evo-Web users
 Test content: 
 EPL High-Visibility ball: by -cRoNoS-
 EPL Trophy and FA Community Shield: by Ronito
 Manchester United GK kits: by G-Style
-
