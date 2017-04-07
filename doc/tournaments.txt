@@ -1,30 +1,43 @@
 Tournament ids (some)
 =======================================================
 
-0   - exhibition match
-1   - uefa champions league exhibition match
-2   - europa league exhibition match
-5   - afc champions league exhibition match
-11  - uefa champions league (qualifying round play-off)
-12  - uefa champions league
-13  - uefa champions league (knock-out)
-19  - uefa europa league
-20  - uefa europa league (knock-out)
-21  - uefa super cup
-32  - afc champions league 
-33  - afc champions league (knock-out)
-39  - english league
-43  - spanish league
-53  - netherlands league
-84  - english cup
-89  - konami league
+0 - exhibition match
+1 - uefa champions league exhibition match
+2 - europa league exhibition match
+5 - afc champions league exhibition match
+11 - uefa champions league (qualifying round play-off)
+12 - uefa champions league (group-stage)
+13 - uefa champions league (knock-out)
+19 - uefa europa league (group-stage)
+20 - uefa europa league (knock-out)
+21 - uefa super cup
+23 - copa libertadores (group stage)
+24 - copa libertadores (knock-out)
+32 - afc champions league (group-stage)
+33 - afc champions league (knock-out)
+39 - english league
+43 - spanish league
+44 - liga adelante
+51 - french league
+53 - netherlands league
+54 - liga Nos
+60 - argentinian league
+72 - PEU league
+84 - english cup
+85 - spanish cup (Copa del Rey)
+86 - italian cup
+89 - konami league
+92 - brazilian league
 101 - english super cup
 102 - spanish super cup
 103 - french super cup
 104 - italian super cup
-134 - international cup
+105 - netherlands super cup
+107 - argentina super cup
+117 - PEU supercup
+134 - international cup (group-stage)
 135 - international cup (knock-out)
-138 - european cup
+138 - european cup (group-stage)
 139 - european cup (knock-out)
 144 - african cup
 145 - american cup
