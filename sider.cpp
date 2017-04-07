@@ -57,6 +57,7 @@ DWORD _tid_addr1 = 0;
 DWORD _tid_target1 = 0;
 DWORD _tid_target2 = 0;
 
+DWORD get_current_settings_addr();
 int convert_tournament_id2();
 int convert_tournament_id(int id);
 
@@ -2815,8 +2816,13 @@ void set_tid(int tid)
     }
 }
 
-void set_match_info(DWORD settings_addr)
+void set_match_info()
 {
+    DWORD settings_addr = get_current_settings_addr();
+    if (!settings_addr) {
+        return;
+    }
+
     int match_id = (int)*((WORD*)settings_addr);
     int match_leg = (int)*((BYTE*)settings_addr + 4);
     int match_info = (int)*((BYTE*)settings_addr + 8);
@@ -2828,7 +2834,9 @@ void set_match_info(DWORD settings_addr)
         set_context_field_nil("match_leg");
     }
     set_context_field_int("match_id", match_id);
-    set_context_field_int("match_info", match_info);
+    if (match_info != 55) {
+        set_context_field_int("match_info", match_info);
+    }
 }
 
 void trophy_map_cp()
@@ -2981,7 +2989,7 @@ DWORD minutes_set(DWORD settings_addr, DWORD num_minutes)
     if (tid != 0xffff) {
         // non-exhibition: try to accelerate events
         // match info
-        set_match_info(settings_addr);
+        set_match_info();
         // tournament id
         set_tid(convert_tournament_id(int(tid)));
         DBG log_(L"tournament id: %d\n", _curr_tournament_id);
@@ -3034,6 +3042,20 @@ void minutes_set_cp()
         popfd
         retn
     }
+}
+
+DWORD get_current_settings_addr()
+{
+    // [[26711b8]+0x34]+0x537b8 : for v1.04
+    BYTE *p = *(BYTE**)_tid_addr1;
+    if (p) {
+        p = *(BYTE**)(p+0x34);
+        if (p) {
+            p = p + 0x537b8;
+            return (DWORD)p;
+        }
+    }
+    return 0;
 }
 
 int convert_tournament_id2()
@@ -3092,7 +3114,7 @@ DWORD set_defaults(DWORD settings_addr)
     int new_tid = convert_tournament_id2();
     if (new_tid != _curr_tournament_id) {
         if ((new_tid == 0) || (_curr_tournament_id == 0 && new_tid != 6)) {
-            set_match_info(settings_addr);
+            set_match_info();
             set_tid(new_tid);
             DBG log_(L"set-defaults: tournament_id = %d\n",
                 _curr_tournament_id);
@@ -3133,7 +3155,7 @@ void set_defaults_cp()
 
 DWORD write_tournament_id(DWORD settings_addr)
 {
-    set_match_info(settings_addr);
+    set_match_info();
     WORD tid = *(WORD*)(settings_addr + 2);
     set_tid(convert_tournament_id((int)tid));
     DBG log_(L"tournament_id = %d\n", _curr_tournament_id);
@@ -3174,6 +3196,7 @@ void write_tournament_id_cp()
 DWORD write_exhib_id(DWORD exhib_id)
 {
     if (_curr_tournament_id == 0) {
+        set_match_info();
         set_tid(convert_tournament_id2());
         DBG log_(L"exhib: tournament_id = %d\n", _curr_tournament_id);
     }
@@ -3213,7 +3236,7 @@ void write_exhib_id_cp()
 DWORD write_stadium(STAD_STRUCT *ss)
 {
     // update match info
-    set_match_info((DWORD)ss - 0x64);
+    set_match_info();
 
     if (_config->_lua_enabled) {
         // lua callbacks
