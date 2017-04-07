@@ -44,10 +44,13 @@ void write_exhib_id_cp();
 void write_tournament_id_cp();
 void write_stadium_cp();
 void read_ball_name_cp();
+void read_stad_name_cp();
+void read_no_stad_name_cp();
 void enter_edit_mode_cp();
 void exit_edit_mode_cp();
 
 char _ball_name[256];
+char _stadium_name[256];
 
 // locations to fill, when hooking
 DWORD _tid_addr1 = 0;
@@ -104,6 +107,7 @@ struct module_t {
     int evt_set_stadium;
     int evt_set_stadium_options;
     int evt_get_ball_name;
+    int evt_get_stadium_name;
     int evt_enter_edit_mode;
     int evt_exit_edit_mode;
 };
@@ -185,6 +189,18 @@ struct BALLNAME_STRUCT {
     DWORD dw1;
     char name[0x88];
 };
+
+struct STADNAME_STRUCT {
+    DWORD dw0;
+    BYTE stad_id;
+    BYTE b0;
+    WORD w0;
+    DWORD dw1;
+    char name[0x7c];
+};
+
+// placeholder ("unknown") stadium
+struct STADNAME_STRUCT _empty_stadium_name;
 
 // original call destination of "lookup_file"
 static DWORD _lookup_file_org = 0;
@@ -365,6 +381,33 @@ BYTE read_ball_name_pattern[26] =
     "\x75\xf9"
     "\x8b\x4d\x0c";
 int read_ball_name_off = 6;
+
+// read stadium name pattern
+BYTE read_stad_name_pattern[26] =
+    "\x30\xc0"
+    "\x5d"
+    "\xc2\x08\x00"
+    "\x8d\x51\x0c"
+    "\x89\xd0"
+    "\x56"
+    "\x8d\x70\x01"
+    "\x8a\x08"
+    "\x40"
+    "\x84\xc9"
+    "\x75\xf9"
+    "\x8b\x4d\x0c";
+int read_stad_name_off = 6;
+
+// read empty stad name pattern
+BYTE read_no_stad_name_pattern[21] =
+    "\x0f\xb6\x88\x16\x03\x00\x00"
+    "\x39\xcb"
+    "\x75\x24"
+    "\x8d\x50\x50"
+    "\x89\xd0"
+    "\x57"
+    "\x8d\x78\x01";
+int read_no_stad_name_off = 0x4f;
 
 // edit mode pattern
 BYTE edit_mode_pattern[25] =
@@ -1099,6 +1142,12 @@ static int sider_context_register(lua_State *L)
         _curr_m->evt_get_ball_name = lua_gettop(_curr_m->L);
         logu_("Registered for \"%s\" event\n", event_key);
     }
+    else if (strcmp(event_key, "get_stadium_name")==0) {
+        lua_pushvalue(L, -1);
+        lua_xmove(L, _curr_m->L, 1);
+        _curr_m->evt_get_stadium_name = lua_gettop(_curr_m->L);
+        logu_("Registered for \"%s\" event\n", event_key);
+    }
     else if (strcmp(event_key, "enter_edit_mode")==0) {
         lua_pushvalue(L, -1);
         lua_xmove(L, _curr_m->L, 1);
@@ -1625,6 +1674,48 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
         }
     }
 
+    // read stadium name
+    {
+        BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
+            read_stad_name_pattern, sizeof(read_stad_name_pattern)-1);
+        if (!p) {
+            log_(L"Unable to patch: (read-stad-name) code pattern not matched\n");
+        }
+        else {
+            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+            p = p + read_stad_name_off;
+
+            log_(L"Enabling read-stad-name event\n");
+            hook_call_point((DWORD)p, read_stad_name_cp, 6, 0);
+        }
+    }
+
+    // read no stadium name
+    {
+        BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
+            read_no_stad_name_pattern, sizeof(read_no_stad_name_pattern)-1);
+        if (!p) {
+            log_(L"Unable to patch: (read-no-stad-name) code pattern not matched\n");
+        }
+        else {
+            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+            p = p + read_no_stad_name_off;
+
+            DWORD oldProtection = 0;
+            DWORD newProtection = PAGE_EXECUTE_READWRITE;
+            if (VirtualProtect(p, 10, newProtection, &oldProtection)) {
+                log_(L"Enabling read-no-stad-name event\n");
+                hook_call_point((DWORD)p, read_no_stad_name_cp, 6, 0);
+                memcpy(p+5, "\xeb\xeb", 2);
+                VirtualProtect(p, 10, oldProtection, NULL);
+            }
+            else {
+                log_(L"PROBLEM with read-no-stad-name: "
+                     L"VirtualProtect FAILED\n");
+            }
+        }
+    }
+
     // edit mode
     {
         BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
@@ -2050,6 +2141,33 @@ char *module_get_ball_name(module_t *m, char *name)
             memset(_ball_name, 0, sizeof(_ball_name));
             strncpy(_ball_name, s, sizeof(_ball_name)-1);
             res = _ball_name;
+        }
+        lua_pop(L, 1);
+        LeaveCriticalSection(&_cs);
+    }
+    return res;
+}
+
+char *module_get_stadium_name(module_t *m, char *name, int stad_id)
+{
+    char *res = NULL;
+    if (m->evt_get_stadium_name != 0) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(m->L, m->evt_get_stadium_name);
+        lua_xmove(m->L, L, 1);
+        // push params
+        lua_pushvalue(L, 1); // ctx
+        lua_pushstring(L, name);
+        lua_pushinteger(L, stad_id);
+        if (lua_pcall(L, 3, 1, 0) != LUA_OK) {
+            const char *err = luaL_checkstring(L, -1);
+            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
+        }
+        else if (lua_isstring(L, -1)) {
+            const char *s = luaL_checkstring(L, -1);
+            memset(_stadium_name, 0, sizeof(_stadium_name));
+            strncpy(_stadium_name, s, sizeof(_stadium_name)-1);
+            res = _stadium_name;
         }
         lua_pop(L, 1);
         LeaveCriticalSection(&_cs);
@@ -3199,6 +3317,82 @@ void read_ball_name_cp()
         pop ebp
         popfd
         mov edx, eax
+        retn
+    }
+}
+
+DWORD read_stad_name(STADNAME_STRUCT *ss)
+{
+    DBG logu_("Read stadium name: %s\n", ss->name);
+    // lua callbacks
+    if (_config->_lua_enabled) {
+        list<module_t*>::iterator i;
+        for (i = _modules.begin(); i != _modules.end(); i++) {
+            module_t *m = *i;
+            char *sn = module_get_stadium_name(m, ss->name, ss->stad_id);
+            if (sn) {
+                return (DWORD)sn;
+            }
+        }
+    }
+    return (DWORD)(ss->name);
+}
+
+void read_stad_name_cp()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        pushfd
+        push ebp
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        push ecx  // stadium name structure addr
+        call read_stad_name
+        add esp,0x04     // pop parameters
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop ebp
+        popfd
+        mov edx, eax
+        retn
+    }
+}
+
+DWORD read_no_stad_name()
+{
+    memset(&_empty_stadium_name, 0, sizeof(STADNAME_STRUCT));
+    return (DWORD)(&_empty_stadium_name);
+}
+
+void read_no_stad_name_cp()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        pushfd
+        push ebp
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        call read_no_stad_name
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop ebp
+        popfd
         retn
     }
 }
