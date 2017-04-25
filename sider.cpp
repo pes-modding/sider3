@@ -796,8 +796,7 @@ static int memory_write(lua_State *L)
     }
     int addr = luaL_checkinteger(L, 1);
     size_t data_len = 0;
-    char *data = strdup(luaL_checklstring(L, 2, &data_len));
-    lua_pop(L, 2);
+    const char *data = luaL_checklstring(L, 2, &data_len);
     if (data && data_len > 0) {
         DWORD newProtection = PAGE_EXECUTE_READWRITE;
         DWORD oldProtection;
@@ -807,15 +806,15 @@ static int memory_write(lua_State *L)
             VirtualProtect((BYTE*)addr, data_len, oldProtection, NULL);
         }
         else {
+            lua_pop(L, 2);
             lua_pushfstring(L,
                 "Problem with VirtualProtect for address: %08x", addr);
             LeaveCriticalSection(&_cs);
-            free(data);
             return lua_error(L);
         }
     }
+    lua_pop(L, 2);
     LeaveCriticalSection(&_cs);
-    free(data);
     return 0;
 }
 
