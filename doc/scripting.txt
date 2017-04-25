@@ -1,7 +1,7 @@
 Sider 3 Lua Module Programmers Guide
 ====================================
-For sider.dll version: 3.3.4
-April 7, 2017
+For sider.dll version: 3.3.4.5
+April 25, 2017
 
 
 
@@ -475,4 +475,33 @@ This function searches for the string of bytes (str), in the range
 of memory addresses between start_addr and end_addr.
 Return value: address, at which the string of bytes was found 
               or nil, if the string was not found.
+
+
+memory.pack(format, number)
+
+This function converts a Lua number into one of the supported binary
+formats (little endian). The "format" parameter is a string that should
+have one of the following values:
+"f"  : 32-bit float, 
+"d"  : 64-bit double-precision float,
+"i"  : 32-bit signed integer,
+"s"  : 16-bit signed integer,
+"ui" : 32-bit unsigned integer,
+"us" : 16-bit unsigned integer
+Return value: string of bytes, representing the number in the format
+specified by the "format" parameter
+
+
+memory.unpack(format, str)
+
+This function converts a string of bytes (str) into a Lua number, using
+the format parameter to interpret the binary spec. The same values are
+supported for "format" param as in memory.pack function.
+Return value: a Lua number, converted from binary representation
+
+These last two functions (memory.pack/memory.unpack) are useful, when
+used together with memory.read and memory.write, when you need to read
+and modify values in RAM and you know what binary formats are used for
+those values. See modules/packunpack.lua - as the example module that
+demonstrates the usage. 
 
