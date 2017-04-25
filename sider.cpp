@@ -818,6 +818,142 @@ static int memory_write(lua_State *L)
     return 0;
 }
 
+static int memory_pack(lua_State *L)
+{
+    EnterCriticalSection(&_cs);
+    if (!lua_isstring(L, 1)) {
+        lua_pushstring(L, "1st argument (format) must be a string");
+        LeaveCriticalSection(&_cs);
+        return lua_error(L);
+    }
+    char *fmt = strdup(luaL_checkstring(L, 1));
+
+    // supported formats:
+    // ----------------------------
+    // f  - float (32 bit)
+    // d  - double (64 bit)
+    // i  - 32-bit integer
+    // s  - 16-bit integer
+    // ui - 32-bit unsigned integer
+    // us - 16-bit unsigned integer
+    // ----------------------------
+    if (fmt[0]=='f') {
+        float v = luaL_checknumber(L, 2);
+        const char *data = (const char*)&v;
+        lua_pushlstring(L, data, sizeof(v));
+    }
+    else if (fmt[0]=='d') {
+        double v = luaL_checknumber(L, 2);
+        const char *data = (const char*)&v;
+        lua_pushlstring(L, data, sizeof(v));
+    }
+    else if (fmt[0]=='i') {
+        int v = luaL_checkint(L, 2);
+        const char *data = (const char*)&v;
+        lua_pushlstring(L, data, sizeof(v));
+    }
+    else if (fmt[0]=='s') {
+        short v = luaL_checkint(L, 2);
+        const char *data = (const char*)&v;
+        lua_pushlstring(L, data, sizeof(v));
+    }
+    else if (fmt[0]=='u') {
+        if (fmt[1]=='i') {
+            unsigned int v = luaL_checkint(L, 2);
+            const char *data = (const char*)&v;
+            lua_pushlstring(L, data, sizeof(v));
+        }
+        else if (fmt[1]=='s') {
+            unsigned short v = luaL_checkint(L, 2);
+            const char *data = (const char*)&v;
+            lua_pushlstring(L, data, sizeof(v));
+        }
+        else {
+            lua_pushfstring(L, "unsupported format: %s", fmt);
+            LeaveCriticalSection(&_cs);
+            return lua_error(L);
+        }
+    }
+    else {
+        lua_pushfstring(L, "unsupported format: %s", fmt);
+        LeaveCriticalSection(&_cs);
+        return lua_error(L);
+    }
+
+    LeaveCriticalSection(&_cs);
+    return 1;
+}
+
+static int memory_unpack(lua_State *L)
+{
+    EnterCriticalSection(&_cs);
+    if (!lua_isstring(L, 1)) {
+        lua_pushstring(L, "1st argument (format) must be a string");
+        LeaveCriticalSection(&_cs);
+        return lua_error(L);
+    }
+    if (!lua_isstring(L, 2)) {
+        lua_pushstring(L, "2nd argument (bytes to unpack) must be a string");
+        LeaveCriticalSection(&_cs);
+        return lua_error(L);
+    }
+    char *fmt = strdup(luaL_checkstring(L, 1));
+    size_t len = 0;
+    const char *str = luaL_checklstring(L, 2, &len);
+    BYTE *data = new BYTE[len];
+    memcpy(data, str, len);
+    lua_pop(L, 2);
+
+    // supported formats:
+    // ----------------------------
+    // f  - float (32 bit)
+    // d  - double (64 bit)
+    // i  - 32-bit integer
+    // s  - 16-bit integer
+    // ui - 32-bit unsigned integer
+    // us - 16-bit unsigned integer
+    // ----------------------------
+    if (fmt[0]=='f') {
+        float v = *(float*)data;
+        lua_pushnumber(L, v);
+    }
+    else if (fmt[0]=='d') {
+        double v = *(double*)data;
+        lua_pushnumber(L, v);
+    }
+    else if (fmt[0]=='i') {
+        int v = *(int*)data;
+        lua_pushnumber(L, v);
+    }
+    else if (fmt[0]=='s') {
+        short v = *(short*)data;
+        lua_pushnumber(L, v);
+    }
+    else if (fmt[0]=='u') {
+        if (fmt[1]=='i') {
+            unsigned int v = *(unsigned int*)data;
+            lua_pushnumber(L, v);
+        }
+        else if (fmt[1]=='s') {
+            unsigned short v = *(unsigned short*)data;
+            lua_pushnumber(L, v);
+        }
+        else {
+            lua_pushfstring(L, "unsupported format: %s", fmt);
+            LeaveCriticalSection(&_cs);
+            return lua_error(L);
+        }
+    }
+    else {
+        lua_pushfstring(L, "unsupported format: %s", fmt);
+        LeaveCriticalSection(&_cs);
+        return lua_error(L);
+    }
+
+    LeaveCriticalSection(&_cs);
+    return 1;
+}
+
 static int memory_search(lua_State *L)
 {
     EnterCriticalSection(&_cs);
@@ -1246,6 +1382,12 @@ static void push_env_table(lua_State *L, const wchar_t *script_name)
     lua_settable(L, -3);
     lua_pushstring(L, "search");
     lua_pushcclosure(L, memory_search, 0);
+    lua_settable(L, -3);
+    lua_pushstring(L, "pack");
+    lua_pushcclosure(L, memory_pack, 0);
+    lua_settable(L, -3);
+    lua_pushstring(L, "unpack");
+    lua_pushcclosure(L, memory_unpack, 0);
     lua_settable(L, -3);
     lua_setfield(L, -2, "memory");
 
