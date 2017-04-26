@@ -9,6 +9,9 @@
 #include "imageutil.h"
 #include "sider.h"
 #include "utf8.h"
+#include "common.h"
+#include "patterns.h"
+#include "gameplay.h"
 
 #include "lua.hpp"
 #include "lauxlib.h"
@@ -22,8 +25,8 @@
 
 using namespace std;
 
-lua_State *L = NULL;
 CRITICAL_SECTION _cs;
+lua_State *L = NULL;
 
 BYTE* find_code_frag(BYTE *base, DWORD max_offset, BYTE *frag, size_t frag_len);
 static DWORD get_target_addr(DWORD call_location);
@@ -218,211 +221,6 @@ static DWORD _team_info_write_org = 0;
 bool _is_game(false);
 bool _is_sider(false);
 HANDLE _mh = NULL;
-
-// livecpk patterns
-BYTE lcpk_pattern_get_buffer_size[16] = 
-    "\x8b\x8d\xc0\xff\xff\xff"
-    "\x8b\x85\xbc\xff\xff\xff"
-    "\x83\xc4\x0c";
-BYTE lcpk_pattern_create_buffer[15] =
-    "\x89\x46\x38"
-    "\x39\x5e\x38"
-    "\x0f\x84\xee\x00\x00\x00"
-    "\x6a\x01";
-BYTE lcpk_pattern_after_read[18] =
-    "\xc7\x46\x10\x01\x00\x00\x00"
-    "\x83\x7e\x10\x01"
-    "\x0f\x85\xbb\x00\x00\x00";
-BYTE lcpk_pattern_lookup_file[17] =
-    "\xeb\x6c"
-    "\x8d\x85\xac\xfd\xff\xff"
-    "\x50"
-    "\x8d\x85\xb0\xfd\xff\xff"
-    "\x50";
-int lcpk_offs_lookup_file = -5;
-
-BYTE lcpk_pattern_get_file_info[12] = 
-    "\x83\x67\x14\x00"
-    "\x83\x67\x1c\x00"
-    "\x89\x4f\x04";
-
-BYTE lcpk_pattern_before_read[10] =
-    "\x89\x46\x18"
-    "\xc6\x46\x6c\x01"
-    "\x31\xc0";
-int lcpk_offs_before_read = -12;
-
-BYTE lcpk_pattern_at_read_file[14] =
-    "\x56"
-    "\x8d\x45\x08"
-    "\x50"
-    "\x53"
-    "\xff\x75\x1c"
-    "\xff\x37"
-    "\xff\x15";
-int lcpk_offs_at_read_file = 11;
-
-BYTE lcpk_pattern_at_set_file_pointer[23] =
-    "\xff\x75\x14"
-    "\x89\x85\xfc\xff\xff\xff"
-    "\x8d\x85\xfc\xff\xff\xff"
-    "\x50"
-    "\xff\x75\x0c"
-    "\xff\x75\x08";
-int lcpk_offs_at_set_file_pointer = 22;
-
-// more patterns
-BYTE bb_pattern[13] =
-    "\x80\x7e\x0c\x00"
-    "\x75\x06"
-    "\x80\x7e\x0d\x00"
-    "\x74\x09";
-int bb_offs = 4;
-
-BYTE trophy_pattern[11] =
-    "\x56"
-    "\x89\xce"
-    "\x50"
-    "\x89\x86\x08\x2c\x00\x00";
-int trophy_offs = 4;
-
-// team ids
-BYTE team_ids_pattern1[14] =
-    "\x81\xe2\xff\x3f\x00\x00"
-    "\x31\x94\xb5\xc8\xff\xff\xff";
-int team_ids_off1 = 0x38;
-
-BYTE team_ids_pattern2[18] =
-    "\x81\xc7\x48\x02\x00\x00"
-    "\xb9\x0b\x00\x00\x00"
-    "\x8d\xb5\xa0\xff\xff\xff";
-int team_ids_off2 = 0x22;
-
-/*
-BYTE team_ids_pattern2[] =
-    "\x66\x89\x86\xf8\x01\x00\x00"
-    "\x89\x8e\xfc\x01\x00\x00"
-    "\x66\x89\x53\x2c";
-int team_ids_off2 = -8;
-*/
-
-// number of minutes
-BYTE minutes_pattern[14] =
-    "\x55"
-    "\x89\xe5"
-    "\x8a\x45\x08"
-    "\x88\x41\x14"
-    "\x5d"
-    "\xc2\x04\x00";
-int minutes_off = 3;
-
-// time clamp pattern
-BYTE time_clamp_pattern[17] =
-    "\xdb\x45\x08"
-    "\xd9\x5d\x08"
-    "\xd9\x45\x08"
-    "\xd9\x56\x54"
-    "\xd9\xe8"
-    "\xd8\xd1";
-BYTE time_clamp_off = 0x36;
-
-// set default settings
-BYTE settings_pattern[16] =
-    "\xc7\x06\xff\xff\xff\xff"
-    "\xc7\x46\x08\x37\x00\x00\x00"
-    "\x88\x5e";
-int settings_off = 0;
-
-// write tournament id
-BYTE write_tid_pattern[18] =
-    "\x8b\x7d\x08"
-    "\x66\x8b\x07"
-    "\x66\x89\x06"
-    "\x66\x8b\x4f\x02"
-    "\x66\x89\x4e\x02";
-int write_tid_off = 17;
-
-// write exhib id
-BYTE write_exhib_id_pattern[14] =
-    "\xc7\x46\x50\x02\x00\x00\x00"
-    "\x5e"
-    "\xc3"
-    "\x8b\x46\x4c"
-    "\x50";
-int write_exhib_id_off = 0x22;
-
-// tid function pattern
-BYTE tid_func_pattern[12] =
-    "\x83\xc0\xda"
-    "\x83\xc4\x04"
-    "\x83\xf8\x3f"
-    "\x77\x14";
-int tid_func_off1 = -5;
-int tid_func_off2 = -0x1c;
-
-// write stadium settings pattern
-BYTE write_stadium_pattern[18] =
-    "\x8d\x8d\xb0\xfd\xff\xff"
-    "\x51"
-    "\xc7\x85\xfc\xff\xff\xff\xff\xff\xff\xff";
-int write_stadium_off = 0;
-
-// read ball name pattern
-BYTE read_ball_name_pattern[26] =
-    "\x30\xc0"
-    "\x5d"
-    "\xc2\x08\x00"
-    "\x8d\x51\x08"
-    "\x89\xd0"
-    "\x56"
-    "\x8d\x70\x01"
-    "\x8a\x08"
-    "\x40"
-    "\x84\xc9"
-    "\x75\xf9"
-    "\x8b\x4d\x0c";
-int read_ball_name_off = 6;
-
-// read stadium name pattern
-BYTE read_stad_name_pattern[26] =
-    "\x30\xc0"
-    "\x5d"
-    "\xc2\x08\x00"
-    "\x8d\x51\x0c"
-    "\x89\xd0"
-    "\x56"
-    "\x8d\x70\x01"
-    "\x8a\x08"
-    "\x40"
-    "\x84\xc9"
-    "\x75\xf9"
-    "\x8b\x4d\x0c";
-int read_stad_name_off = 6;
-
-// read empty stad name pattern
-BYTE read_no_stad_name_pattern[21] =
-    "\x0f\xb6\x88\x16\x03\x00\x00"
-    "\x39\xcb"
-    "\x75\x24"
-    "\x8d\x50\x50"
-    "\x89\xd0"
-    "\x57"
-    "\x8d\x78\x01";
-int read_no_stad_name_off = 0x4f;
-
-// edit mode pattern
-BYTE edit_mode_pattern[25] =
-    "\x56"
-    "\x89\xce"
-    "\x8b\x86\xc8\x00\x00\x00"
-    "\x83\xe8\x00"
-    "\x74\x46"
-    "\x83\xe8\x02"
-    "\x74\x2c"
-    "\x83\xe8\x02"
-    "\x75\x59";
-int enter_edit_mode_off = 0x67;
-int exit_edit_mode_off = 0x44;
 
 bool patched(false);
 bool patched2(false);
@@ -1191,20 +989,6 @@ BYTE* find_cut_scenes(BYTE *base, DWORD max_offset)
     return NULL;
 }
 
-BYTE* find_code_frag(BYTE *base, DWORD max_offset, BYTE *frag, size_t frag_len)
-{
-    BYTE *p = base;
-    BYTE *max_p = base + max_offset;
-    while (p < max_p && memcmp(p, frag, frag_len)!=0) {
-        p += 1;
-    }
-    if (p < max_p) {
-        return p;
-    }
-    return NULL;
-
-}
-
 static int sider_context_register(lua_State *L)
 {
     const char *event_key = luaL_checkstring(L, 1);
@@ -1390,6 +1174,9 @@ static void push_env_table(lua_State *L, const wchar_t *script_name)
     lua_pushcclosure(L, memory_unpack, 0);
     lua_settable(L, -3);
     lua_setfield(L, -2, "memory");
+
+    // gameplay lib
+    init_gameplay_lib(L);
 
     // set _G
     lua_pushvalue(L, -1);
@@ -1875,6 +1662,9 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
                 exit_edit_mode_cp, 6, 5);
         }
     }
+
+    // gameplay
+    lookup_gameplay_locations(base, h);
 
     if (_config->_livecpk_enabled) {
         BYTE *frag[5];
@@ -3140,6 +2930,12 @@ DWORD minutes_set(DWORD settings_addr, DWORD num_minutes)
             (DWORD*)(settings_addr + 0x614)); // away
     }
     DBG log_(L"match time: %d minutes\n", num_minutes);
+
+    // temp: more stadium info
+    //set_context_field_int("match_data", (int)settings_addr);
+    //set_context_field_int("stadium_choice",
+    //    (int)*((BYTE*)settings_addr + 0x2a));
+
     // lua callbacks
     if (_config->_lua_enabled) {
         list<module_t*>::iterator i;
