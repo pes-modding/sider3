@@ -121,6 +121,14 @@ automatically right before the game is launched.
 (Defaults to 0: do not close)
 
 
+start.minimized = 0
+
+- If you set this to 1, then Sider will start with a minimized window.
+Again, like the previous option, this setting can be helpful, if you
+use a batch file to auto-start sider, just before the game launches.
+(Defaults to 0: normal window)
+
+
 cpk.root = "c:\cpk-roots\balls-root"
 cpk.root = "c:\cpk-roots\kits-root"
 cpk.root = ".\another-root\stadiums"
