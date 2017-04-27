@@ -1,4 +1,4 @@
-Sider v3.3 for Pro Evolution Soccer 2017
+Sider v3.4 for Pro Evolution Soccer 2017
 ========================================
 Copyright (C) 2017 juce, nesa24
 
@@ -111,6 +111,14 @@ debug = 0
 into the log file (sider.log). This is useful primarily for troubleshooting.
 Extra logging may slow the game down, so normally you would want to keep
 this setting set to 0. (Defaults to 0: no extra output)
+
+
+close.on.exit = 0
+
+- If this setting is set to 1, then Sider will close itself, when the
+game exits. This can be handy, if you use a batch file to start sider
+automatically right before the game is launched.
+(Defaults to 0: do not close)
 
 
 cpk.root = "c:\cpk-roots\balls-root"
