@@ -1,7 +1,7 @@
 Sider 3 Lua Module Programmers Guide
 ====================================
-For sider.dll version: 3.3.4.5
-April 25, 2017
+For sider.dll version: 3.4.0
+April 27, 2017
 
 
 
@@ -104,7 +104,7 @@ of the game. As more scripts/modules are created by the community
 the context object will probably also change, and include more and more
 information about the game.
 
-As of 3.3.4 release, this is what the context object has:
+As of 3.4.0 release, this is what the context object has:
 
 ctx.home_team  - id of the home team of the current match, after
                  it is selected in the exhibition match, or the next
@@ -504,4 +504,86 @@ used together with memory.read and memory.write, when you need to read
 and modify values in RAM and you know what binary formats are used for
 those values. See modules/packunpack.lua - as the example module that
 demonstrates the usage. 
+
+
+
+8. Gameplay library
+~~~~~~~~~~~~~~~~~~~
+
+While it is possible (and not hard) to make gameplay edits by just using
+the "memory" library, several specific gameplay properties have been
+organized into an easy-to-use library called "gameplay".
+
+In your Lua modules, you can change gameplay by simply reading and
+assigning values to the following keys of gameplay library:
+
+
+gameplay.ball_weight
+
+Default value: 1000.0
+Smaller values make the ball heavier, larger - lighter.
+
+
+gameplay.ball_physics
+
+Default value: 0.4
+Well, to be absolutely honest, i haven't tried changing this much,
+and i don't know exactly what part of ball physics is affected. But
+since Nesa found it, it's included.
+
+
+gameplay.ball_bounce
+
+Default value: 1.0
+Changing this will change the way the ball bounces. And some other
+stuff too... you'll see.
+
+
+gameplay.ball_friction
+
+Default value: -0.5
+Affects the way the ball is slowed down by friction: either in the air
+or on the ground. Negative values smaller than -0.5 make the ball stop
+quicker. Positive values actually make the ball accelerate as it moves,
+which is fun, but totally unrealistic.
+
+
+gameplay.shooting_power
+
+Default value: 0.85
+Smaller values - less shot power, larger values - more power.
+
+
+gameplay.speed
+
+Default value: 0.2
+Affects the speed of players. Even small changes are quite noticeable.
+However, i have seen some strange artifacts: like players unable to
+trap a simple pass, as the ball approaches them. So, i dunno...
+maybe we need a better understanding of what this does exactly.
+
+
+gameplay.speed_global
+
+Default value: 5.0
+It appears that "speed" and "speed_global" are used together. The game
+apparently multiplies them at some point, and yet they each have their
+own purpose too, because even though 0.2*5 = 0.02*50, these two
+scenarios do not result in the same gameplay.
+
+
+**********************************************************************
+IMPORTANT WARNING: ALL THESE GAMEPLAY CONTROLS ARE EXPERIMENTAL AND
+CONSTITUE OUR GUESSES AT HOW THE GAME WORKS. AS YOU WILL SEE, SOME
+OF THEM HAVE WEIRD SIDE-EFFECTS. SOME OF THE VALUES ARE VERY
+SENSITIVE TO CHANGES. ANYWAYS, HAVE FUN!
+**********************************************************************
+
+
+See modules/gameplay.lua - for the simplest example of how gameplay library
+can be used. The modules/gameplay2.lua - is a slightly more advanced
+example, but not much more complicated: it uses an ini-file, which is
+read every time a new set of teams in selected. This allows you to modify
+the gameplay for each new match, without exiting the game (if you change
+the values in gameplay.ini)
 
