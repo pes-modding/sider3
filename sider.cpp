@@ -28,10 +28,6 @@ using namespace std;
 CRITICAL_SECTION _cs;
 lua_State *L = NULL;
 
-BYTE* find_code_frag(BYTE *base, DWORD max_offset, BYTE *frag, size_t frag_len);
-static DWORD get_target_addr(DWORD call_location);
-static void hook_call_point(DWORD addr, void* func, int codeShift, int numNops, bool addRetn=false);
-
 void lcpk_lookup_file_cp();
 void lcpk_get_file_info_cp();
 void lcpk_before_read_cp();
@@ -329,6 +325,7 @@ public:
     bool _camera_dynamic_wide_angle_enabled;
     bool _black_bars_off;
     bool _close_sider_on_exit;
+    bool _start_minimized;
     DWORD _hp_lookup_file;
     DWORD _hp_get_file_info;
     DWORD _hp_before_read;
@@ -350,6 +347,7 @@ public:
                  _camera_dynamic_wide_angle_enabled(false),
                  _black_bars_off(false),
                  _close_sider_on_exit(false),
+                 _start_minimized(false),
                  _hp_lookup_file(0),
                  _hp_get_file_info(0),
                  _hp_before_read(0),
@@ -416,6 +414,10 @@ public:
         
         _close_sider_on_exit = GetPrivateProfileInt(_section_name.c_str(),
             L"close.on.exit", _close_sider_on_exit,
+            config_ini);
+
+        _start_minimized = GetPrivateProfileInt(_section_name.c_str(),
+            L"start.minimized", _start_minimized,
             config_ini);
 
         _livecpk_enabled = GetPrivateProfileInt(_section_name.c_str(),
@@ -502,42 +504,6 @@ bool init_paths() {
     *(p+1) = L'\0';
 
     return true;
-}
-
-__declspec(dllexport) void log_(const wchar_t *format, ...)
-{
-    FILE *file = _wfopen(dll_log, L"a+, ccs=UTF-8");
-    if (file) {
-        va_list params;
-        va_start(params, format);
-        vfwprintf(file, format, params);
-        va_end(params);
-        fclose(file);
-    }
-}
-
-__declspec(dllexport) void logu_(const char *format, ...)
-{
-    FILE *file = _wfopen(dll_log, L"a+");
-    if (file) {
-        va_list params;
-        va_start(params, format);
-        vfprintf(file, format, params);
-        va_end(params);
-        fclose(file);
-    }
-}
-
-__declspec(dllexport) void start_log_(const wchar_t *format, ...)
-{
-    FILE *file = _wfopen(dll_log, L"wt, ccs=UTF-8");
-    if (file) {
-        va_list params;
-        va_start(params, format);
-        vfwprintf(file, format, params);
-        va_end(params);
-        fclose(file);
-    }
 }
 
 static int sider_log(lua_State *L) {
@@ -920,42 +886,6 @@ static bool is_pes(wchar_t* name, wstring** match)
     return result;
 }
 
-static DWORD get_target_addr(DWORD call_location)
-{
-    if (call_location) {
-        BYTE* bptr = (BYTE*)call_location;
-        DWORD protection = 0;
-        DWORD newProtection = PAGE_EXECUTE_READWRITE;
-        if (VirtualProtect(bptr, 8, newProtection, &protection)) {
-            // get original target
-            DWORD* ptr = (DWORD*)(call_location + 1);
-            return (DWORD)(ptr[0] + call_location + 5);
-        }
-    }
-    return 0;
-}
-
-static void hook_call_point(DWORD addr, void* func, int codeShift, int numNops, bool addRetn)
-{
-    DWORD target = (DWORD)func + codeShift;
-	if (addr && target)
-	{
-	    BYTE* bptr = (BYTE*)addr;
-	    DWORD protection = 0;
-	    DWORD newProtection = PAGE_EXECUTE_READWRITE;
-	    if (VirtualProtect(bptr, 16, newProtection, &protection)) {
-	        bptr[0] = 0xe8;
-	        DWORD* ptr = (DWORD*)(addr + 1);
-	        ptr[0] = target - (DWORD)(addr + 5);
-            // padding with NOPs
-            for (int i=0; i<numNops; i++) bptr[5+i] = 0x90;
-            if (addRetn)
-                bptr[5+numNops]=0xc3;
-	        log_(L"Function (%08x) HOOKED at address (%08x)\n", target, addr);
-	    }
-	}
-}
-
 BYTE* find_code(BYTE *base, DWORD max_offset)
 {
     BYTE *p = base;
@@ -1226,6 +1156,7 @@ DWORD install_func(LPVOID thread_param) {
     log_(L"lua.enabled = %d\n", _config->_lua_enabled);
     log_(L"luajit.ext.enabled = %d\n", _config->_luajit_extensions_enabled);
     log_(L"close.on.exit = %d\n", _config->_close_sider_on_exit);
+    log_(L"start.minimized = %d\n", _config->_start_minimized);
 
     /* DISABLING FOR NOW, as this is a SECURITY issue
     for (list<wstring>::iterator it = _config->_lua_extra_globals.begin();
@@ -3452,6 +3383,11 @@ void exit_edit_mode_cp()
         mov dword ptr ds:[esi+0xc8], 4
         retn
     }
+}
+
+__declspec(dllexport) bool start_minimized()
+{
+    return _config && _config->_start_minimized;
 }
 
 INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved) 

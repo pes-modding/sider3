@@ -40,7 +40,7 @@ version.obj: version.cpp
 $(LUALIBPATH)\$(LUALIB):
 	cd $(LUALIBPATH) && msvcbuild.bat
 
-sider.obj: sider.cpp sider.h patterns.h
+sider.obj: sider.cpp sider.h patterns.h common.obj
 sider.dll: sider.obj imageutil.obj version.obj common.obj gameplay.obj sider.res $(LUALIBPATH)\$(LUALIB)
 	$(LINK) $(LFLAGS) /out:sider.dll /DLL sider.obj imageutil.obj version.obj common.obj gameplay.obj sider.res /LIBPATH:$(LUALIBPATH) $(LIBS) $(LUALIB)
 
