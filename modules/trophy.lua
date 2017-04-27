@@ -40,7 +40,7 @@ local function switch_tournament(ctx, tournament_id)
         -- eventually have a complete list of ids
         log(string.format("tournament_id: %d", tournament_id))
     end
-    return rep_id or tournament_id
+    return rep_id
 end
 
 local function make_key(ctx, filename)
