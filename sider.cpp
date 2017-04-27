@@ -3545,7 +3545,7 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
                     main_hwnd = FindWindow(SIDERCLS, NULL);
                     if (main_hwnd) {
                         PostMessage(main_hwnd, SIDER_MSG_EXIT, 0, 0);
-                        log_(L"Posted message for sider.exe to quit");
+                        log_(L"Posted message for sider.exe to quit\n");
                     }
                 }
             }
