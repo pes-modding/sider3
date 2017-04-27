@@ -1267,6 +1267,7 @@ void init_lua_support()
         }
         log_(L"~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
         log_(L"Lua module system initialized.\n");
+        log_(L"Active modules: %d\n", _modules.size());
         log_(L"~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
     }
 }
