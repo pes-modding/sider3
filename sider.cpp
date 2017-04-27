@@ -1138,47 +1138,13 @@ static void push_env_table(lua_State *L, const wchar_t *script_name)
     }
 }
 
-bool _install_func(IMAGE_SECTION_HEADER *h);
-
-DWORD install_func(LPVOID thread_param) {
-    log_(L"DLL attaching to (%s).\n", module_filename);
-    log_(L"Mapped into PES.\n");
-    logu_("UTF-8 check: ленинградское время ноль часов ноль минут.\n");
-
-    _is_game = true;
-    _is_edit_mode = false;
-
-    InitializeCriticalSection(&_cs);
-
-    log_(L"debug = %d\n", _config->_debug);
-    log_(L"livecpk.enabled = %d\n", _config->_livecpk_enabled);
-    log_(L"lookup-cache.enabled = %d\n", _config->_lookup_cache_enabled);
-    log_(L"lua.enabled = %d\n", _config->_lua_enabled);
-    log_(L"luajit.ext.enabled = %d\n", _config->_luajit_extensions_enabled);
-    log_(L"close.on.exit = %d\n", _config->_close_sider_on_exit);
-    log_(L"start.minimized = %d\n", _config->_start_minimized);
-
-    /* DISABLING FOR NOW, as this is a SECURITY issue
-    for (list<wstring>::iterator it = _config->_lua_extra_globals.begin();
-            it != _config->_lua_extra_globals.end();
-            it++) {
-        log_(L"Using lua extra global: %s\n", it->c_str());
-    }
-    */
-
-    for (list<wstring>::iterator it = _config->_cpk_roots.begin();
-            it != _config->_cpk_roots.end();
-            it++) {
-        log_(L"Using cpk.root: %s\n", it->c_str());
-    }
-
-    if (_config->_code_sections.size() == 0) {
-        log_(L"No code sections specified in config: nothing to do then.");
-        return 0;
-    }
-
-
+void init_lua_support()
+{
     if (_config->_lua_enabled) {
+        log_(L"~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+        log_(L"Initilizing Lua module system:\n");
+        log_(L"~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+
         // load and initialize lua modules
         L = luaL_newstate();
         luaL_openlibs(L);
@@ -1299,6 +1265,49 @@ DWORD install_func(LPVOID thread_param) {
                 _modules.push_back(m);
             }
         }
+        log_(L"~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+        log_(L"Lua module system initialized.\n");
+        log_(L"~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+    }
+}
+
+bool _install_func(IMAGE_SECTION_HEADER *h);
+
+DWORD install_func(LPVOID thread_param) {
+    log_(L"DLL attaching to (%s).\n", module_filename);
+    log_(L"Mapped into PES.\n");
+    logu_("UTF-8 check: ленинградское время ноль часов ноль минут.\n");
+
+    _is_game = true;
+    _is_edit_mode = false;
+
+    InitializeCriticalSection(&_cs);
+
+    log_(L"debug = %d\n", _config->_debug);
+    log_(L"livecpk.enabled = %d\n", _config->_livecpk_enabled);
+    log_(L"lookup-cache.enabled = %d\n", _config->_lookup_cache_enabled);
+    log_(L"lua.enabled = %d\n", _config->_lua_enabled);
+    log_(L"luajit.ext.enabled = %d\n", _config->_luajit_extensions_enabled);
+    log_(L"close.on.exit = %d\n", _config->_close_sider_on_exit);
+    log_(L"start.minimized = %d\n", _config->_start_minimized);
+
+    /* DISABLING FOR NOW, as this is a SECURITY issue
+    for (list<wstring>::iterator it = _config->_lua_extra_globals.begin();
+            it != _config->_lua_extra_globals.end();
+            it++) {
+        log_(L"Using lua extra global: %s\n", it->c_str());
+    }
+    */
+
+    for (list<wstring>::iterator it = _config->_cpk_roots.begin();
+            it != _config->_cpk_roots.end();
+            it++) {
+        log_(L"Using cpk.root: %s\n", it->c_str());
+    }
+
+    if (_config->_code_sections.size() == 0) {
+        log_(L"No code sections specified in config: nothing to do then.");
+        return 0;
     }
 
     list<wstring>::iterator it = _config->_code_sections.begin();
@@ -1318,9 +1327,11 @@ DWORD install_func(LPVOID thread_param) {
 
         log_(L"Examining code section: %s\n", it->c_str());
         if (_install_func(h)) {
+            init_lua_support();
             break;
         }
     }
+    log_(L"Sider initialization complete.\n");
     return 0;
 }
 
@@ -1602,7 +1613,9 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
     }
 
     // gameplay
-    lookup_gameplay_locations(base, h);
+    if (_config->_lua_enabled) {
+        lookup_gameplay_locations(base, h);
+    }
 
     if (_config->_livecpk_enabled) {
         BYTE *frag[5];
