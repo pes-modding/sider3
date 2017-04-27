@@ -7,6 +7,9 @@ using namespace std;
 
 #define SIDER_FM L"Local\\sider-3"
 
+#define SIDERCLS L"SIDERCLS"
+#define SIDER_MSG_EXIT WM_USER + 1
+
 __declspec(dllexport) void setHook();
 __declspec(dllexport) void unsetHook();
 __declspec(dllexport) void log_(const wchar_t *format, ...);
