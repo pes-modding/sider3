@@ -4,6 +4,7 @@ Credits: gameplay research by nesa24
 Requires: sider.dll 3.4.0.0
 --]]
 
+-- log current gameplay values
 local function log_gameplay_values()
     log(string.format("gameplay.ball_physics = %s", gameplay.ball_physics))
     log(string.format("gameplay.ball_weight = %s", gameplay.ball_weight))
@@ -13,20 +14,15 @@ local function log_gameplay_values()
     log(string.format("gameplay.shooting_power = %s", gameplay.shooting_power))
 end
 
-local function gameplay_tweaks(ctx)
+local function init(ctx)
+    log("ORIGINAL:")
+    log_gameplay_values()
+
     gameplay.ball_weight = 700.0   -- heavy ball
     gameplay.shooting_power = 0.9  -- increased shooting power
 
-    -- log current gameplay values
+    log("CURRENT:")
     log_gameplay_values()
-end
-
-local function init(ctx)
-    -- log original gameplay values
-    log_gameplay_values()
-
-    -- we will modify gameplay settings before each match
-    ctx.register("set_home_team", gameplay_tweaks)
 end
 
 return { init = init }
