@@ -328,6 +328,7 @@ public:
     int _camera_sliders_max;
     bool _camera_dynamic_wide_angle_enabled;
     bool _black_bars_off;
+    bool _close_sider_on_exit;
     DWORD _hp_lookup_file;
     DWORD _hp_get_file_info;
     DWORD _hp_before_read;
@@ -348,6 +349,7 @@ public:
                  _camera_sliders_max(0),
                  _camera_dynamic_wide_angle_enabled(false),
                  _black_bars_off(false),
+                 _close_sider_on_exit(false),
                  _hp_lookup_file(0),
                  _hp_get_file_info(0),
                  _hp_before_read(0),
@@ -412,6 +414,10 @@ public:
             L"debug", _debug,
             config_ini);
         
+        _close_sider_on_exit = GetPrivateProfileInt(_section_name.c_str(),
+            L"close.on.exit", _close_sider_on_exit,
+            config_ini);
+
         _livecpk_enabled = GetPrivateProfileInt(_section_name.c_str(),
             L"livecpk.enabled", _livecpk_enabled,
             config_ini);
@@ -1219,6 +1225,7 @@ DWORD install_func(LPVOID thread_param) {
     log_(L"lookup-cache.enabled = %d\n", _config->_lookup_cache_enabled);
     log_(L"lua.enabled = %d\n", _config->_lua_enabled);
     log_(L"luajit.ext.enabled = %d\n", _config->_luajit_extensions_enabled);
+    log_(L"close.on.exit = %d\n", _config->_close_sider_on_exit);
 
     /* DISABLING FOR NOW, as this is a SECURITY issue
     for (list<wstring>::iterator it = _config->_lua_extra_globals.begin();
@@ -3451,6 +3458,7 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
 {
     wstring *match = NULL;
     INT result = FALSE;
+    HWND main_hwnd;
 
     switch(Reason) {
         case DLL_PROCESS_ATTACH:
@@ -3593,6 +3601,15 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
                     }
                     else {
                         log_(L"PROBLEM with Virtual Protect.\n");
+                    }
+                }
+
+                // tell sider.exe to close
+                if (_config->_close_sider_on_exit) {
+                    main_hwnd = FindWindow(SIDERCLS, NULL);
+                    if (main_hwnd) {
+                        PostMessage(main_hwnd, SIDER_MSG_EXIT, 0, 0);
+                        log_(L"Posted message for sider.exe to quit");
                     }
                 }
             }

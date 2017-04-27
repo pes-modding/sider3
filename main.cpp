@@ -20,6 +20,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     switch(uMsg)
     {
         case WM_DESTROY:
+        case SIDER_MSG_EXIT:
             // Exit the application when the window closes
             unsetHook();
             PostQuitMessage(1);
@@ -43,7 +44,7 @@ bool InitApp(HINSTANCE hInstance, LPSTR lpCmdLine)
     wcx.hCursor = LoadCursor(NULL,IDC_ARROW);
     wcx.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
     wcx.lpszMenuName = NULL;
-    wcx.lpszClassName = L"SIDERCLS";
+    wcx.lpszClassName = SIDERCLS;
     wcx.hIconSm = LoadIcon(hInstance, L"si");
 
     // Detect already running sider
