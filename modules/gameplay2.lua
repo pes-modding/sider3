@@ -6,7 +6,7 @@ Requires: sider.dll 3.4.0.0
 
 local function get_gameplay_settings(ctx)
     local t = {}
-    for line in io.lines(ctx.sider_dir .. "\\gameplay.txt") do
+    for line in io.lines(ctx.sider_dir .. "\\gameplay.ini") do
         local name, value = string.match(line, "^([%w_]+)%s*=%s*([-%d.]+)")
         if name and value then
             t[name] = tonumber(value)
