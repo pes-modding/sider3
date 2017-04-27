@@ -16,5 +16,6 @@ __declspec(dllexport) void log_(const wchar_t *format, ...);
 __declspec(dllexport) void logu_(const char *format, ...);
 __declspec(dllexport) void start_log_(const wchar_t *format, ...);
 __declspec(dllexport) void get_module_version(HMODULE, wstring&);
+__declspec(dllexport) bool start_minimized();
 
 #endif

@@ -94,9 +94,14 @@ HWND BuildWindow(int nCmdShow)
     HGDIOBJ hObj = GetStockObject(DEFAULT_GUI_FONT);
     SendMessage(heightLabel, WM_SETFONT, (WPARAM)hObj, true);
 
-    ShowWindow(retval,nCmdShow);  // Show the window
-    //ShowWindow(retval,
-    //    SW_SHOWMINIMIZED|SW_SHOWMINNOACTIVE);  // Show the window
+    // Show the window
+    if (start_minimized()) {
+        ShowWindow(retval,
+            SW_SHOWMINIMIZED|SW_SHOWMINNOACTIVE);
+    }
+    else {
+        ShowWindow(retval,nCmdShow);
+    }
     return retval; // return its handle for future use.
 }
 
