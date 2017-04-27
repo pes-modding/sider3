@@ -214,9 +214,10 @@ static BYTE ball_physics_pattern[23] =
     "\xdd\x85\xf4\xff\xff\xff"
     "\xd8\xc8"
     "\xd9\x5d\x14"
-    "\xd9\x56\x14"
+    "\xd9\x45\x14"
     "\xdc\x0d";
 static int ball_physics_off = 22;
+static int ball_bounce_off = 28;
 
 // gameplay: ball weight
 static BYTE ball_weight_pattern[22] = 
@@ -227,27 +228,27 @@ static BYTE ball_weight_pattern[22] =
     "\x8d\x95\xf0\xff\xff\xff"
     "\xdc\x0d";
 static int ball_weight_off = 21;
-static int ball_bounce_off = 27;
 
 // gameplay: speed global
-static BYTE speed_global_pattern[24] =
-    "\xd9\x85\xcf\xff\xff\xff"
+static BYTE speed_global_pattern[26] =
+    "\xd9\x85\xbc\xff\xff\xff"
     "\xd8\xd9"
     "\xdf\xe0"
     "\xf6\xc4\x05"
     "\x7b\x46"
     "\x8b\x95\xe4\xff\xff\xff"
+    "\xd9\x02"
     "\xdc\x25";
-static int speed_global_off = 23;
+static int speed_global_off = 25;
 
 // gameplay: speed
 static BYTE speed_pattern[20] =
     "\xdc\x9d\x94\xff\xff\xff"
     "\xdf\xe0"
-    "\xf6\xc4\x06"
+    "\xf6\xc4\x05"
     "\x0f\x8a\x21\x03\x00\x00"
     "\xd9\xee";
-static int speed_pattern_off = -4;
+static int speed_off = -4;
 
 // gameplay: shooting power
 static BYTE shot_power_pattern[12] =
