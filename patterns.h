@@ -257,5 +257,16 @@ static BYTE shot_power_pattern[12] =
     "\xdc\x0d";
 static int shot_power_off = 11;
 
+// gameplay: ball friction
+static BYTE ball_friction_pattern[31] =
+    "\xd9\x83\x54\x01\x00\x00"
+    "\xd9\x9d\xf0\xff\xff\xff"
+    "\xd9\x85\xe4\xff\xff\xff"
+    "\xd9\xc0"
+    "\xd9\xe0"
+    "\xd9\x9d\xd0\xff\xff\xff"
+    "\xdc\x0d";
+static int ball_friction_off = 30;
+
 #endif
 
