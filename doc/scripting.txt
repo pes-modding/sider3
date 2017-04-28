@@ -1,30 +1,30 @@
 Sider 3 Lua Module Programmers Guide
 ====================================
 For sider.dll version: 3.4.0
-April 27, 2017
+April 28, 2017
 
 
 
 1. Introduction
 ~~~~~~~~~~~~~~~
 
-The main idea here is to provide a safe and flexible way to 
+The main idea here is to provide a safe and flexible way to
 extend Sider functionality. It will (eventually) allow modders to
 alter many aspects of the game, load all sorts of extra content
-and even do gameplay tweaks. 
+and even do gameplay tweaks.
 
-Instead of offering a C interface, where the programmers would need 
+Instead of offering a C interface, where the programmers would need
 to write a DLL, i'm a taking a different approach here and trying to
 design a system, where extension modules are written in Lua. A module
 would typically initialize itself by registering for certain events,
 and then Sider will call the module functions, when those events
 occur later in the game.
 
-Lua is by now a well-established language of choice for scripting 
+Lua is by now a well-established language of choice for scripting
 support in games, used all over the gaming industry. Most famous
 example is probably WarCraft.
 
-To boost the performance, Sider uses a just-in-time compiler for Lua 
+To boost the performance, Sider uses a just-in-time compiler for Lua
 called LuaJIT, written by Mike Pall. LuaJIT is a truly brilliant piece
 of software. It is 100% compatible with Lua 5.1, and also implements
 some features of Lua 5.2, but more importantly it is blazingly fast,
@@ -32,7 +32,7 @@ often approaching the speed of C code.
 ( More information here: https://luajit.org )
 
 After reading this guide, the next step is to study the example (and
-non-example) modules, which are provided with this release of Sider. 
+non-example) modules, which are provided with this release of Sider.
 Find them in the "modules" directory.
 
 
@@ -43,14 +43,14 @@ Find them in the "modules" directory.
 If you are familiar with Lua and how modules are typically organized
 then this will make full sense to you. If are you new to Lua, i would
 strongly recommend reading "Programming in Lua" by Roberto Ierusalimschy.
-2nd edition covers Lua 5.1, which is the version of the language used 
+2nd edition covers Lua 5.1, which is the version of the language used
 by Sider. However, any other edition of the book will be just as helpful.
 
 In any case, the module organization is pretty simple:
 
 a) Your need to create a new table
-b) Provide an "init" function in that table, where you need to 
-do any initialization logic for the module and register for the events 
+b) Provide an "init" function in that table, where you need to
+do any initialization logic for the module and register for the events
 your module is interested in.
 c) Return that table as the last statement
 
@@ -69,7 +69,7 @@ return m
 
 As you have already guessed, this module doesn't really do much. But it
 is a valid module, and can be loaded by Sider. For that you need to save
-it as <something>.lua file in the "modules" folder, inside sider. Let's 
+it as <something>.lua file in the "modules" folder, inside sider. Let's
 assume that you named it: test.lua. Then, you must also enable it in
 sider.ini, like this:
 
@@ -85,9 +85,9 @@ in paths. If you only have latin-1 chars, then ANSI is ok too.
 
 If you now run the game, your module will get loaded by Sider, and then
 the "init" function will be called, so you should see a "Hello, world!"
-message in sider.log. 
+message in sider.log.
 
-If you made a mistake and your module has a syntax error, for example, 
+If you made a mistake and your module has a syntax error, for example,
 or some other problem, then you should see an error message in sider.log,
 explaining where (on which line of the script) the problem occurred.
 
@@ -137,8 +137,18 @@ ctx.match_info - meaning of this field varies, depending on the type
                  identify a final match of a particular tournament.
 
 ctx.stadium    - numeric id of the stadium that will be used (or was
-                 last used, if the stadium for the next match hasn't 
+                 last used, if the stadium for the next match hasn't
                  been chosen yet by the game logic)
+
+ctx.stadium_choice - This field is set when the game is in one of the
+                     exhibition modes, and the stadium is allowed to
+                     be selected via the menu. Once the actual final
+                     selection of the stadium is made (right after the
+                     "set_stadium" event fires), the "stadium_choice"
+                     field get removed from the context.
+                     Special values:
+                          253 - home stadium,
+                          254 - random stadium.
 
 ctx.timeofday  - The values are: 0 - Day, 1 - Night. Same as with
                  stadium, it represents the time of day of the coming
@@ -149,7 +159,7 @@ ctx.season     - The values are: 0 - Summer, 1 - Winter.
 
 ctx.weather    - The values are: 0 - Fine, 1 - Rainy
 
-ctx.match_time - Duration of the match in minutes. 
+ctx.match_time - Duration of the match in minutes.
 
 ctx.is_edit_mode  -  The gets set to true, when the game enters
                      the Edit mode. When the player return back to
@@ -158,7 +168,7 @@ ctx.is_edit_mode  -  The gets set to true, when the game enters
 
 The context is a simple Lua table, so you can change the values as you
 wish. However, doing so does not really make much sense, because it will
-not affect the game in any way. To actually meaningfully modify these 
+not affect the game in any way. To actually meaningfully modify these
 settings, you will need to register for game events, which are described
 further down, and then have your handler functions return appropriate
 values.
@@ -192,17 +202,17 @@ This event occurs when the game needs to find out some information
 about the file, specified by relative filename. Maybe the game needs
 to create a buffer, or it needs to determine the filesize, or something
 else. Your handler function is expected to return a string key that
-will be used for caching of "livecpk_get_filepath". You can just 
-return filename as the key, without any changes, or return nil - 
-which will result in the same outcome. But sometimes, you need to make 
+will be used for caching of "livecpk_get_filepath". You can just
+return filename as the key, without any changes, or return nil -
+which will result in the same outcome. But sometimes, you need to make
 a different key, because the context has some additional information
 that is important. A good example is the trophy-server module (trophy.lua):
 it returns a key that has tournament id in it, which allows
-it to later load some files for tournament A and other files for 
+it to later load some files for tournament A and other files for
 tournament B.
 
 IMPORTANT: This event can fire a lot of times for a given filename,
-so try to avoid doing expensive computations in the handler function, 
+so try to avoid doing expensive computations in the handler function,
 because it may affect your frame rate.
 
 
@@ -210,7 +220,7 @@ because it may affect your frame rate.
 Handler function: f(ctx, filename, key)
 Return value is expected to be a string or nil.
 
-This event is related to "livecpk_make_key". 
+This event is related to "livecpk_make_key".
 It works like this: after the key is returned by livecpk_make_key
 handler, sider needs to know which actual file (absolute path) needs
 to be loaded for this key. So your handler function is expected to
@@ -223,7 +233,7 @@ the disk). See trophy.lua for an example usage of this event.
 
 - Event name: "livecpk_rewrite"
 Handler function: f(ctx, filename)
-Return value is expected to be a string or nil. 
+Return value is expected to be a string or nil.
 
 Allows the filename to be rewritten to another. This is a very
 powerful, but also quite dangerous function, if you are not careful.
@@ -237,7 +247,7 @@ loading indicator will keep spinning forever, or the game can just
 crash. So, be careful, and don't rewrite blindly ;-)
 
 See "kpr2nd.lua" module for an example of rewrite usage: it is
-another example of trying to load GK 2nd kit for an away team 
+another example of trying to load GK 2nd kit for an away team
 goalkeeper. You will find out that its behaviour is slightly
 different from the "keeper2nd.lua" module.
 
@@ -293,6 +303,29 @@ This event occurs, when the tournament id is determined. Your module
 cannot change this value.
 
 
+- Event name: "set_stadium_choice"
+Handler function: f(ctx, stadium_id, initial)
+Return value expected: nil
+
+This is a notification-type event that fires in two situations:
+1) when the game is about to present the pre-game menu, where the
+stadium selection enabled. In this case, the "stadium_id" will be
+the previously chosen stadium, and the "initial" flag will be true.
+2) If the user enters the stadium selection menu, then when they
+exit it, this event will fire again, with updated choice of
+stadium, and the "initial" flag will be false this time.
+
+In addition to the actual id of the stadium chosen, the "stadium_id"
+parameter may have the following special values:
+    253 : "home stadium"
+    254 : "random stadium"
+
+NOTE: the final stadium selection isn't actually made, until after the
+"set_stadium" event. So, if you want to change stadium, or see what
+was chosen as random/home stadium, then you will need to also register
+for the "set_stadium" event.
+
+
 - Event name: "set_stadium"
 Handler function: f(ctx, options)
 Return value expected: nil or number or table
@@ -325,10 +358,10 @@ Handler function: f(ctx, options)
 Return value expected: nil or table
 
 This event fires, when the stadium settings are chosen for the upcoming
-match. The "options" parameter is a Lua table which contains the following 
+match. The "options" parameter is a Lua table which contains the following
 keys: "stadium", "timeofday", "weather", "season". Each of these has an
 integer value, as the game uses: for stadium - it is the id of the stadium,
-for timeofday: 0 - means Day, 1 - means Night; 
+for timeofday: 0 - means Day, 1 - means Night;
 for weather: 0 - Fine (sunny), 1 - Rain;
 for season: 0 - Summer, 1 - Winter
 
@@ -394,7 +427,7 @@ writing your handler functions.
 ~~~~~~~~~~
 
 Sider provides a function called "log". This can be used to print
-out any information you want into the sider.log file. 
+out any information you want into the sider.log file.
 You can use string.format to format your message in a way similar
 to what you would do with C printf:
 
@@ -414,10 +447,10 @@ on what an environment is - read about Lua environments in the Lua
 manual online, or in Programming in Lua book. What is important
 here is that a module has access to a limited set of globals:
 
-Standard Lua: 
+Standard Lua:
     assert, ipairs, pairs, tostring, tonumber, table,
     string, math, unpack, type, error, io, os, _VERSION, _G
-Sider: 
+Sider:
     log, memory, _FILE
 
 You can also enable "ffi" and "bit" modules, which are LuaJIT
@@ -473,7 +506,7 @@ memory.search(str, start_addr, end_addr)
 
 This function searches for the string of bytes (str), in the range
 of memory addresses between start_addr and end_addr.
-Return value: address, at which the string of bytes was found 
+Return value: address, at which the string of bytes was found
               or nil, if the string was not found.
 
 
@@ -482,7 +515,7 @@ memory.pack(format, number)
 This function converts a Lua number into one of the supported binary
 formats (little endian). The "format" parameter is a string that should
 have one of the following values:
-"f"  : 32-bit float, 
+"f"  : 32-bit float,
 "d"  : 64-bit double-precision float,
 "i"  : 32-bit signed integer,
 "s"  : 16-bit signed integer,
@@ -503,7 +536,7 @@ These last two functions (memory.pack/memory.unpack) are useful, when
 used together with memory.read and memory.write, when you need to read
 and modify values in RAM and you know what binary formats are used for
 those values. See modules/packunpack.lua - as the example module that
-demonstrates the usage. 
+demonstrates the usage.
 
 
 
