@@ -38,6 +38,11 @@ function m.set_tid(ctx, tid)
     tlog("ctx: %s", t2s(ctx))
 end
 
+function m.set_stadium_choice(ctx, stadium_id, initial)
+    tlog("stadium_choice: %s (initial: %s)", stadium_id, initial)
+    tlog("ctx: %s", t2s(ctx))
+end
+
 function m.set_stadium(ctx, options)
     tlog("stadium: %s", options.stadium)
     tlog("ctx: %s", t2s(ctx))
@@ -63,6 +68,7 @@ function m.init(ctx)
    ctx.register("set_away_team", m.set_away)
    ctx.register("set_tournament_id", m.set_tid)
    ctx.register("set_match_time", m.set_match_time)
+   ctx.register("set_stadium_choice", m.set_stadium_choice)
    ctx.register("set_stadium", m.set_stadium)
    ctx.register("set_conditions", m.set_conditions)
    ctx.register("enter_edit_mode", m.enter_edit_mode)
