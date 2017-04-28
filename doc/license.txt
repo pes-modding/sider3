@@ -1,3 +1,5 @@
+Sider: companion program for Pro Evolution Soccer
+
 Copyright (c) 2014-2017, juce, nesa24
 
 All rights reserved.
