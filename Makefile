@@ -33,14 +33,14 @@ sider_main.res: sider_main.rc sider.ico
 	$(RC) -r -fo sider_main.res sider_main.rc
 
 common.obj: common.cpp common.h
-gameplay.obj: gameplay.cpp gameplay.h patterns.h
+gameplay.obj: gameplay.cpp gameplay.h patterns.h common.h sider.h imageutil.h
 imageutil.obj: imageutil.cpp imageutil.h
 version.obj: version.cpp
 
 $(LUALIBPATH)\$(LUALIB):
 	cd $(LUALIBPATH) && msvcbuild.bat
 
-sider.obj: sider.cpp sider.h patterns.h common.obj
+sider.obj: sider.cpp sider.h patterns.h common.h imageutil.h
 sider.dll: sider.obj imageutil.obj version.obj common.obj gameplay.obj sider.res $(LUALIBPATH)\$(LUALIB)
 	$(LINK) $(LFLAGS) /out:sider.dll /DLL sider.obj imageutil.obj version.obj common.obj gameplay.obj sider.res /LIBPATH:$(LUALIBPATH) $(LIBS) $(LUALIB)
 
