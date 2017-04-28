@@ -207,6 +207,29 @@ static BYTE edit_mode_pattern[25] =
 static int enter_edit_mode_off = 0x67;
 static int exit_edit_mode_off = 0x44;
 
+// stadium choice: initial
+static BYTE stadium_choice_initial_pattern[27] =
+    "\x83\xf8\x22"
+    "\x74\x05"
+    "\x83\xf8\x23"
+    "\x75\x07"
+    "\xc6\x85\xff\xff\xff\xff\x01"
+    "\x8b\x95\xf0\xff\xff\xff"
+    "\x52"
+    "\x89\xf1";
+static BYTE stadium_choice_initial_off = 0x1f;
+
+// stadium choice: changed
+static BYTE stadium_choice_changed_pattern[24] =
+    "\x8b\x4e\x78"
+    "\x8b\x56\x7c"
+    "\x8b\x58\x34"
+    "\x8b\x46\x68"
+    "\x29\xca"
+    "\xc1\xfa\x02"
+    "\x81\xc3\xb8\x37\x05\x00";
+static BYTE stadium_choice_changed_off = 0x33;
+
 // gameplay: ball physics
 static BYTE ball_physics_pattern[23] =
     "\xd9\x5d\x14"

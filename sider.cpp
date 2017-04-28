@@ -47,6 +47,8 @@ void read_stad_name_cp();
 void read_no_stad_name_cp();
 void enter_edit_mode_cp();
 void exit_edit_mode_cp();
+void write_stadium_choice_initial_cp();
+void write_stadium_choice_changed_cp();
 
 char _ball_name[256];
 char _stadium_name[256];
@@ -1613,6 +1615,37 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
         }
     }
 
+    // stadium choice
+    {
+        BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
+            stadium_choice_initial_pattern,
+            sizeof(stadium_choice_initial_pattern)-1);
+        if (!p) {
+            log_(L"Unable to patch: (stadium-choice-initial) code pattern not matched\n");
+        }
+        else {
+            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+
+            hook_call_point((DWORD)(p + stadium_choice_initial_off),
+                write_stadium_choice_initial_cp, 6, 2);
+        }
+    }
+
+    {
+        BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
+            stadium_choice_changed_pattern,
+            sizeof(stadium_choice_changed_pattern)-1);
+        if (!p) {
+            log_(L"Unable to patch: (stadium-choice-changed) code pattern not matched\n");
+        }
+        else {
+            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+
+            hook_call_point((DWORD)(p + stadium_choice_changed_off),
+                write_stadium_choice_changed_cp, 6, 1);
+        }
+    }
+
     // gameplay
     if (_config->_lua_enabled) {
         lookup_gameplay_locations(base, h);
@@ -2883,11 +2916,6 @@ DWORD minutes_set(DWORD settings_addr, DWORD num_minutes)
     }
     DBG log_(L"match time: %d minutes\n", num_minutes);
 
-    // temp: more stadium info
-    //set_context_field_int("match_data", (int)settings_addr);
-    //set_context_field_int("stadium_choice",
-    //    (int)*((BYTE*)settings_addr + 0x2a));
-
     // lua callbacks
     if (_config->_lua_enabled) {
         list<module_t*>::iterator i;
@@ -3147,11 +3175,14 @@ DWORD write_stadium(STAD_STRUCT *ss)
         set_context_field_int("timeofday", ss->timeofday);
         set_context_field_int("weather", ss->weather);
         set_context_field_int("season", ss->season);
-    }
 
-    // sync the thumbnail
-    BYTE *p = (BYTE*)ss - 0x40 + 6;
-    *p = ss->stadium;
+        // sync the thumbnail
+        BYTE *p = (BYTE*)ss - 0x40 + 6;
+        *p = ss->stadium;
+
+        // clear stadium_choice in context
+        set_context_field_nil("stadium_choice");
+    }
 
     DBG log_(L"stadium=%d, timeofday=%d, weather=%d, season=%d\n",
         ss->stadium, ss->timeofday, ss->weather, ss->season);
@@ -3184,6 +3215,88 @@ void write_stadium_cp()
         pop ebp
         popfd
         lea ecx, dword ptr ds:[ebp-0x250]
+        retn
+    }
+}
+
+DWORD write_stadium_choice_initial(DWORD stadium_choice)
+{
+    log_(L"stadium choice: initial: 0x%02x (%d)\n",
+        stadium_choice, stadium_choice);
+    set_context_field_int("stadium_choice", stadium_choice);
+    return 0;
+}
+
+void write_stadium_choice_initial_cp()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        pushfd
+        push ebp
+        push eax
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        and eax,0xff
+        push eax  // stadium choice
+        call write_stadium_choice_initial
+        add esp,0x04     // pop parameters
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop eax
+        pop ebp
+        popfd
+        movzx eax, byte ptr ss:[ebp-1]
+        retn
+    }
+}
+
+DWORD write_stadium_choice_changed(DWORD stadium_choice)
+{
+    log_(L"stadium choice: changed: 0x%02x (%d)\n",
+        stadium_choice, stadium_choice);
+    set_context_field_int("stadium_choice", stadium_choice);
+    return 0;
+}
+
+void write_stadium_choice_changed_cp()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        pushfd
+        push ebp
+        push eax
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        and eax,0xff
+        push eax  // stadium choice
+        call write_stadium_choice_changed
+        add esp,0x04     // pop parameters
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop eax
+        pop ebp
+        popfd
+        pop ecx  // return addr
+        push 1
+        push 0
+        push ecx  // push return addr on top - so that we return
+        mov ecx,esi
         retn
     }
 }
@@ -3236,6 +3349,7 @@ void read_ball_name_cp()
 DWORD read_stad_name(STADNAME_STRUCT *ss)
 {
     DBG logu_("Read stadium name: %s\n", ss->name);
+
     // lua callbacks
     if (_config->_lua_enabled) {
         list<module_t*>::iterator i;
