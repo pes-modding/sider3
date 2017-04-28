@@ -65,6 +65,7 @@ int convert_tournament_id(int id);
 bool _is_edit_mode(false);
 int _curr_tournament_id(0);
 bool _replace_trophy(false);
+bool _had_stadium_choice(false);
 
 BOOL WINAPI lcpk_at_read_file(
     _In_        HANDLE       hFile,
@@ -106,6 +107,7 @@ struct module_t {
     int evt_set_away_team;
     int evt_set_tid;
     int evt_set_match_time;
+    int evt_set_stadium_choice;
     int evt_set_stadium;
     int evt_set_conditions;
     int evt_get_ball_name;
@@ -982,6 +984,12 @@ static int sider_context_register(lua_State *L)
         _curr_m->evt_set_match_time = lua_gettop(_curr_m->L);
         logu_("Registered for \"%s\" event\n", event_key);
     }
+    else if (strcmp(event_key, "set_stadium_choice")==0) {
+        lua_pushvalue(L, -1);
+        lua_xmove(L, _curr_m->L, 1);
+        _curr_m->evt_set_stadium_choice = lua_gettop(_curr_m->L);
+        logu_("Registered for \"%s\" event\n", event_key);
+    }
     else if (strcmp(event_key, "set_stadium")==0) {
         lua_pushvalue(L, -1);
         lua_xmove(L, _curr_m->L, 1);
@@ -1625,6 +1633,7 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
         }
         else {
             log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+            log_(L"Enabling stadium-choice (initial) context flag\n");
 
             hook_call_point((DWORD)(p + stadium_choice_initial_off),
                 write_stadium_choice_initial_cp, 6, 2);
@@ -1640,6 +1649,7 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
         }
         else {
             log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+            log_(L"Enabling stadium-choice (changed) context flag\n");
 
             hook_call_point((DWORD)(p + stadium_choice_changed_off),
                 write_stadium_choice_changed_cp, 6, 1);
@@ -2121,6 +2131,24 @@ void module_exit_edit_mode(module_t *m)
             const char *err = luaL_checkstring(L, -1);
             logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
             lua_pop(L, 1);
+        }
+        LeaveCriticalSection(&_cs);
+    }
+}
+
+void module_set_stadium_choice(module_t *m, int stadium_id, bool initial)
+{
+    if (m->evt_set_stadium_choice != 0) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(m->L, m->evt_set_stadium_choice);
+        lua_xmove(m->L, L, 1);
+        // push params
+        lua_pushvalue(L, 1); // ctx
+        lua_pushinteger(L, stadium_id);
+        lua_pushboolean(L, initial);
+        if (lua_pcall(L, 3, 0, 0) != LUA_OK) {
+            const char *err = luaL_checkstring(L, -1);
+            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
         }
         LeaveCriticalSection(&_cs);
     }
@@ -3182,6 +3210,7 @@ DWORD write_stadium(STAD_STRUCT *ss)
 
         // clear stadium_choice in context
         set_context_field_nil("stadium_choice");
+        _had_stadium_choice = false;
     }
 
     DBG log_(L"stadium=%d, timeofday=%d, weather=%d, season=%d\n",
@@ -3221,9 +3250,19 @@ void write_stadium_cp()
 
 DWORD write_stadium_choice_initial(DWORD stadium_choice)
 {
-    log_(L"stadium choice: initial: 0x%02x (%d)\n",
+    DBG log_(L"stadium choice: initial: 0x%02x (%d)\n",
         stadium_choice, stadium_choice);
     set_context_field_int("stadium_choice", stadium_choice);
+
+    // lua callbacks
+    if (_config->_lua_enabled) {
+        list<module_t*>::iterator i;
+        for (i = _modules.begin(); i != _modules.end(); i++) {
+            module_t *m = *i;
+            module_set_stadium_choice(m, stadium_choice, true);
+        }
+    }
+    _had_stadium_choice = true;
     return 0;
 }
 
@@ -3260,9 +3299,21 @@ void write_stadium_choice_initial_cp()
 
 DWORD write_stadium_choice_changed(DWORD stadium_choice)
 {
-    log_(L"stadium choice: changed: 0x%02x (%d)\n",
+    DBG log_(L"stadium choice: changed: 0x%02x (%d)\n",
         stadium_choice, stadium_choice);
-    set_context_field_int("stadium_choice", stadium_choice);
+
+    if (_had_stadium_choice) {
+        set_context_field_int("stadium_choice", stadium_choice);
+
+        // lua callbacks
+        if (_config->_lua_enabled) {
+            list<module_t*>::iterator i;
+            for (i = _modules.begin(); i != _modules.end(); i++) {
+                module_t *m = *i;
+                module_set_stadium_choice(m, stadium_choice, false);
+            }
+        }
+    }
     return 0;
 }
 
