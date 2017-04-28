@@ -1,7 +1,7 @@
 --[[ 
 
 Trophy-server
-version 0.1 by juce
+version 0.2 by juce
  
 The principle of trophy server is as follows:
 
