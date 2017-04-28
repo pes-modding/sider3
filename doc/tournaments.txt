@@ -6,39 +6,60 @@ Tournament ids (some)
 2 - europa league exhibition match
 5 - afc champions league exhibition match
 11 - uefa champions league (qualifying round play-off)
-12 - uefa champions league (group-stage)
+12 - uefa champions league (group stage)
 13 - uefa champions league (knock-out)
-19 - uefa europa league (group-stage)
+19 - uefa europa league (group stage)
 20 - uefa europa league (knock-out)
 21 - uefa super cup
 23 - copa libertadores (group stage)
-24 - copa libertadores (knock-out)
-32 - afc champions league (group-stage)
+24 - copa libertadores (Cup mode)
+25 - Copa Libertadores (knock-out)
+32 - afc champions league
 33 - afc champions league (knock-out)
 39 - english league
+40 - English 2nd Division
 43 - spanish league
 44 - liga adelante
+47 - italian league
+48 - Italian 2nd Division
 51 - french league
+52 - Ligue 2
 53 - netherlands league
-54 - liga Nos
-60 - argentinian league
-72 - PEU league
+54 - Liga Nos
+57 - Brazilian league
+60 - Argentinian league
+64 - Chilean League (First Stage)
+72 - PEU League
+74 - PLA League
+77 - PAS League
+83 - konami league
 84 - english cup
 85 - spanish cup (Copa del Rey)
 86 - italian cup
-89 - konami league
-92 - brazilian league
+87 - France Cup (Coupe de France)
+88 - Netherlands Cup
+89 - Portugal Cup (Taça de Portugal)
+92 - Brazilian Cup
+95 - Argentina Cup
+96 - Chilean Cup
 101 - english super cup
 102 - spanish super cup
 103 - french super cup
 104 - italian super cup
-105 - netherlands super cup
-107 - argentina super cup
-117 - PEU supercup
-134 - international cup (group-stage)
-135 - international cup (knock-out)
-138 - european cup (group-stage)
+105 - Netherlands Supercup
+106 - portugal supercup (SuperTaca)
+107 - argentina supercup
+111 - PEU Cup
+112 - PLA Cup
+114 - PAS Cup
+117 - PEU Supercup
+119 - PAS Supercup
+120 - fifa club world cup (ML mode)
+134 - international cup (fifa world cup group stage)
+135 - international cup (fifa world cup knock-out)
+138 - european cup (group stage)
 139 - european cup (knock-out)
 144 - african cup
 145 - american cup
 155 - konami cup
+
