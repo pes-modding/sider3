@@ -220,15 +220,13 @@ static BYTE stadium_choice_initial_pattern[27] =
 static BYTE stadium_choice_initial_off = 0x1f;
 
 // stadium choice: changed
-static BYTE stadium_choice_changed_pattern[24] =
-    "\x8b\x4e\x78"
-    "\x8b\x56\x7c"
-    "\x8b\x58\x34"
-    "\x8b\x46\x68"
-    "\x29\xca"
-    "\xc1\xfa\x02"
-    "\x81\xc3\xb8\x37\x05\x00";
-static BYTE stadium_choice_changed_off = 0x33;
+static BYTE stadium_choice_changed_pattern1[6] =
+    "\x0f\xb6\x04\x81\x50";
+static BYTE stadium_choice_changed_off1 = 12;
+
+static BYTE stadium_choice_changed_pattern2[7] =
+    "\x0f\xb6\x04\x81\x57\x50";
+static BYTE stadium_choice_changed_off2 = 13;
 
 // gameplay: ball physics
 static BYTE ball_physics_pattern[23] =

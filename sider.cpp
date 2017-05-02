@@ -48,7 +48,8 @@ void read_no_stad_name_cp();
 void enter_edit_mode_cp();
 void exit_edit_mode_cp();
 void write_stadium_choice_initial_cp();
-void write_stadium_choice_changed_cp();
+void write_stadium_choice_changed_cp1();
+void write_stadium_choice_changed_cp2();
 
 char _ball_name[256];
 char _stadium_name[256];
@@ -1642,17 +1643,32 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
 
     {
         BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
-            stadium_choice_changed_pattern,
-            sizeof(stadium_choice_changed_pattern)-1);
-        if (!p) {
-            log_(L"Unable to patch: (stadium-choice-changed) code pattern not matched\n");
-        }
-        else {
-            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+            stadium_choice_changed_pattern1,
+            sizeof(stadium_choice_changed_pattern1)-1);
+        if (p) {
+            log_(L"Code pattern (1) found at offset: %08x (%08x)\n",
+                (p-base), p);
             log_(L"Enabling stadium-choice (changed) context flag\n");
 
-            hook_call_point((DWORD)(p + stadium_choice_changed_off),
-                write_stadium_choice_changed_cp, 6, 1);
+            hook_call_point((DWORD)(p + stadium_choice_changed_off1),
+                write_stadium_choice_changed_cp1, 6, 1);
+        }
+        else {
+            p = find_code_frag(base, h->Misc.VirtualSize,
+                stadium_choice_changed_pattern2,
+                sizeof(stadium_choice_changed_pattern2)-1);
+            if (p) {
+                log_(L"Code pattern (2) found at offset: %08x (%08x)\n",
+                    (p-base), p);
+                log_(L"Enabling stadium-choice (changed) context flag\n");
+
+                hook_call_point((DWORD)(p + stadium_choice_changed_off2),
+                    write_stadium_choice_changed_cp2, 6, 1);
+            }
+            if (!p) {
+                log_(L"Unable to patch: (stadium-choice-changed) "
+                     L"code patterns (1 and 2) not matched\n");
+            }
         }
     }
 
@@ -3317,7 +3333,42 @@ DWORD write_stadium_choice_changed(DWORD stadium_choice)
     return 0;
 }
 
-void write_stadium_choice_changed_cp()
+void write_stadium_choice_changed_cp1()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        pushfd
+        push ebp
+        push eax
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        and eax,0xff
+        push eax  // stadium choice
+        call write_stadium_choice_changed
+        add esp,0x04     // pop parameters
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop eax
+        pop ebp
+        popfd
+        pop ecx  // return addr
+        push 1
+        push 0
+        push ecx  // push return addr on top - so that we return
+        mov ecx,edi
+        retn
+    }
+}
+
+void write_stadium_choice_changed_cp2()
 {
     __asm {
         // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
