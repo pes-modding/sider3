@@ -228,6 +228,14 @@ static BYTE stadium_choice_changed_pattern2[7] =
     "\x0f\xb6\x04\x81\x57\x50";
 static BYTE stadium_choice_changed_off2 = 13;
 
+// stadium: load for replay
+static BYTE stadium_replay_load_pattern[25] =
+    "\x8b\x8e\xb0\x0f\x00\x00"
+    "\x89\x8f\xa8\x50\x01\x00"
+    "\x8b\x96\xb4\x0f\x00\x00"
+    "\x89\x97\xac\x50\x01\x00";
+static int stadium_replay_load_off = 24;
+
 // gameplay: ball physics
 static BYTE ball_physics_pattern[23] =
     "\xd9\x5d\x14"
