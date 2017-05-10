@@ -1,7 +1,7 @@
 Sider 3 Lua Module Programmers Guide
 ====================================
-For sider.dll version: 3.4.0
-April 28, 2017
+For sider.dll version: 3.4.1
+May 9, 2017
 
 
 
@@ -104,7 +104,7 @@ of the game. As more scripts/modules are created by the community
 the context object will probably also change, and include more and more
 information about the game.
 
-As of 3.4.0 release, this is what the context object has:
+As of 3.4.1 release, this is what the context object has:
 
 ctx.home_team  - id of the home team of the current match, after
                  it is selected in the exhibition match, or the next
@@ -364,6 +364,28 @@ integer value, as the game uses: for stadium - it is the id of the stadium,
 for timeofday: 0 - means Day, 1 - means Night;
 for weather: 0 - Fine (sunny), 1 - Rain;
 for season: 0 - Summer, 1 - Winter
+
+
+- Event name: "set_stadium_for_replay"
+Handler function: f(ctx, options)
+Return value expected: nil or number or table
+
+This event fires before the stadium is loaded for replay watching.
+Same behaviour as with "set_stadium" event. If you return a stadium id
+or a table with "stadium" key, then this stadium will be used for replay
+instead of the one saved in the replay file.
+
+
+- Event name: "set_conditions_for_replay"
+Handler function: f(ctx, options)
+Return value expected: nil or table
+
+This event fires before the stadium is loaded for replay watching, but
+right after "set_stadium_for_replay". Same behaviour as with "set_conditions"
+event. If you return a table with values, then you can modify the weather,
+season, and timeofday of the replay. Return nil, if you don't want to
+modify any of those.
+
 
 You handler function can either return nil, which means that other modules
 can receive the event and process it. Or, the handler can return a table
