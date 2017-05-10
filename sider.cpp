@@ -42,6 +42,7 @@ void set_defaults_cp();
 void write_exhib_id_cp();
 void write_tournament_id_cp();
 void write_stadium_cp();
+void write_stadium_for_replay_cp();
 void read_ball_name_cp();
 void read_stad_name_cp();
 void read_no_stad_name_cp();
@@ -111,6 +112,8 @@ struct module_t {
     int evt_set_stadium_choice;
     int evt_set_stadium;
     int evt_set_conditions;
+    int evt_set_stadium_for_replay;
+    int evt_set_conditions_for_replay;
     int evt_get_ball_name;
     int evt_get_stadium_name;
     int evt_enter_edit_mode;
@@ -1003,6 +1006,18 @@ static int sider_context_register(lua_State *L)
         _curr_m->evt_set_conditions = lua_gettop(_curr_m->L);
         logu_("Registered for \"%s\" event\n", event_key);
     }
+    else if (strcmp(event_key, "set_stadium_for_replay")==0) {
+        lua_pushvalue(L, -1);
+        lua_xmove(L, _curr_m->L, 1);
+        _curr_m->evt_set_stadium_for_replay = lua_gettop(_curr_m->L);
+        logu_("Registered for \"%s\" event\n", event_key);
+    }
+    else if (strcmp(event_key, "set_conditions_for_replay")==0) {
+        lua_pushvalue(L, -1);
+        lua_xmove(L, _curr_m->L, 1);
+        _curr_m->evt_set_conditions_for_replay = lua_gettop(_curr_m->L);
+        logu_("Registered for \"%s\" event\n", event_key);
+    }
     else if (strcmp(event_key, "get_ball_name")==0) {
         lua_pushvalue(L, -1);
         lua_xmove(L, _curr_m->L, 1);
@@ -1545,6 +1560,23 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
 
             log_(L"Enabling write-stadium event\n");
             hook_call_point((DWORD)p, write_stadium_cp, 6, 1);
+        }
+    }
+
+    // write stadium for replay
+    {
+        BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
+            stadium_replay_load_pattern,
+            sizeof(stadium_replay_load_pattern)-1);
+        if (!p) {
+            log_(L"Unable to patch: (write-stadium-for-replay) code pattern not matched\n");
+        }
+        else {
+            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+            p = p + stadium_replay_load_off;
+
+            log_(L"Enabling write-stadium-for-replay event\n");
+            hook_call_point((DWORD)p, write_stadium_for_replay_cp, 6, 1);
         }
     }
 
@@ -2217,6 +2249,93 @@ bool module_set_conditions(module_t *m, STAD_STRUCT *ss)
     if (m->evt_set_conditions != 0) {
         EnterCriticalSection(&_cs);
         lua_pushvalue(m->L, m->evt_set_conditions);
+        lua_xmove(m->L, L, 1);
+        // push params
+        lua_pushvalue(L, 1); // ctx
+        lua_newtable(L);
+        lua_pushinteger(L, ss->stadium);
+        lua_setfield(L, -2, "stadium");
+        lua_pushinteger(L, ss->timeofday);
+        lua_setfield(L, -2, "timeofday");
+        lua_pushinteger(L, ss->weather);
+        lua_setfield(L, -2, "weather");
+        lua_pushinteger(L, ss->season);
+        lua_setfield(L, -2, "season");
+        if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
+            const char *err = luaL_checkstring(L, -1);
+            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
+        }
+        else if (lua_istable(L, -1)) {
+            lua_getfield(L, -1, "timeofday");
+            if (lua_isnumber(L, -1)) {
+                ss->timeofday = luaL_checkinteger(L, -1);
+            }
+            lua_pop(L, 1);
+            lua_getfield(L, -1, "weather");
+            if (lua_isnumber(L, -1)) {
+                ss->weather = luaL_checkinteger(L, -1);
+            }
+            lua_pop(L, 1);
+            lua_getfield(L, -1, "season");
+            if (lua_isnumber(L, -1)) {
+                ss->season = luaL_checkinteger(L, -1);
+            }
+            lua_pop(L, 1);
+            res = true;
+        }
+        lua_pop(L, 1);
+        LeaveCriticalSection(&_cs);
+    }
+    return res;
+}
+
+bool module_set_stadium_for_replay(module_t *m, STAD_STRUCT *ss)
+{
+    bool res(false);
+    if (m->evt_set_stadium_for_replay != 0) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(m->L, m->evt_set_stadium_for_replay);
+        lua_xmove(m->L, L, 1);
+        // push params
+        lua_pushvalue(L, 1); // ctx
+        lua_newtable(L);
+        lua_pushinteger(L, ss->stadium);
+        lua_setfield(L, -2, "stadium");
+        lua_pushinteger(L, ss->timeofday);
+        lua_setfield(L, -2, "timeofday");
+        lua_pushinteger(L, ss->weather);
+        lua_setfield(L, -2, "weather");
+        lua_pushinteger(L, ss->season);
+        lua_setfield(L, -2, "season");
+        if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
+            const char *err = luaL_checkstring(L, -1);
+            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
+        }
+        else if (lua_istable(L, -1)) {
+            lua_getfield(L, -1, "stadium");
+            if (lua_isnumber(L, -1)) {
+                ss->stadium = luaL_checkinteger(L, -1);
+            }
+            lua_pop(L, 1);
+            res = true;
+        }
+        else if (lua_isnumber(L, -1)) {
+            ss->stadium = luaL_checkinteger(L, -1);
+            lua_pop(L, 1);
+            res = true;
+        }
+        lua_pop(L, 1);
+        LeaveCriticalSection(&_cs);
+    }
+    return res;
+}
+
+bool module_set_conditions_for_replay(module_t *m, STAD_STRUCT *ss)
+{
+    bool res(false);
+    if (m->evt_set_conditions_for_replay != 0) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(m->L, m->evt_set_conditions_for_replay);
         lua_xmove(m->L, L, 1);
         // push params
         lua_pushvalue(L, 1); // ctx
@@ -3260,6 +3379,74 @@ void write_stadium_cp()
         pop ebp
         popfd
         lea ecx, dword ptr ds:[ebp-0x250]
+        retn
+    }
+}
+
+DWORD write_stadium_for_replay(STAD_STRUCT *ss)
+{
+    // update match info
+    set_match_info();
+
+    if (_config->_lua_enabled) {
+        // lua callbacks
+        list<module_t*>::iterator i;
+        for (i = _modules.begin(); i != _modules.end(); i++) {
+            module_t *m = *i;
+            if (module_set_stadium_for_replay(m, ss)) {
+                break;
+            }
+        }
+        for (i = _modules.begin(); i != _modules.end(); i++) {
+            module_t *m = *i;
+            if (module_set_conditions_for_replay(m, ss)) {
+                break;
+            }
+        }
+
+        set_context_field_int("stadium", ss->stadium);
+        set_context_field_int("timeofday", ss->timeofday);
+        set_context_field_int("weather", ss->weather);
+        set_context_field_int("season", ss->season);
+
+        // clear stadium_choice in context
+        set_context_field_nil("stadium_choice");
+        _had_stadium_choice = false;
+    }
+
+    DBG log_(L"replay: stadium=%d, timeofday=%d, weather=%d, season=%d\n",
+        ss->stadium, ss->timeofday, ss->weather, ss->season);
+    return 0;
+}
+
+void write_stadium_for_replay_cp()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        pushfd
+        push ebp
+        push eax
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        mov eax,edi
+        add eax,0x150a0
+        push eax  // stadium base addr
+        call write_stadium_for_replay
+        add esp,0x04     // pop parameters
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop eax
+        pop ebp
+        popfd
+        mov eax,dword ptr ds:[esi+0x0fb8]
         retn
     }
 }
