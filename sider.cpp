@@ -48,8 +48,8 @@ void read_stad_name_cp();
 void read_no_stad_name_cp();
 void enter_edit_mode_cp();
 void exit_edit_mode_cp();
-void enter_replay_mode_cp();
-void exit_replay_mode_cp();
+void enter_replay_gallery_cp();
+void exit_replay_gallery_cp();
 void write_stadium_choice_initial_cp();
 void write_stadium_choice_changed_cp1();
 void write_stadium_choice_changed_cp2();
@@ -67,7 +67,7 @@ int convert_tournament_id2();
 int convert_tournament_id(int id);
 
 bool _is_edit_mode(false);
-bool _is_replay_mode(false);
+bool _is_replay_gallery(false);
 int _curr_tournament_id(0);
 bool _replace_trophy(false);
 bool _had_stadium_choice(false);
@@ -121,6 +121,8 @@ struct module_t {
     int evt_get_stadium_name;
     int evt_enter_edit_mode;
     int evt_exit_edit_mode;
+    int evt_enter_replay_gallery;
+    int evt_exit_replay_gallery;
 };
 list<module_t*> _modules;
 module_t* _curr_m;
@@ -1056,6 +1058,18 @@ static int sider_context_register(lua_State *L)
         _curr_m->evt_exit_edit_mode = lua_gettop(_curr_m->L);
         logu_("Registered for \"%s\" event\n", event_key);
     }
+    else if (strcmp(event_key, "enter_replay_gallery")==0) {
+        lua_pushvalue(L, -1);
+        lua_xmove(L, _curr_m->L, 1);
+        _curr_m->evt_enter_replay_gallery = lua_gettop(_curr_m->L);
+        logu_("Registered for \"%s\" event\n", event_key);
+    }
+    else if (strcmp(event_key, "exit_replay_gallery")==0) {
+        lua_pushvalue(L, -1);
+        lua_xmove(L, _curr_m->L, 1);
+        _curr_m->evt_exit_replay_gallery = lua_gettop(_curr_m->L);
+        logu_("Registered for \"%s\" event\n", event_key);
+    }
     else {
         logu_("WARN: trying to register for unknown event: \"%s\"\n",
             event_key);
@@ -1673,7 +1687,7 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
     // replay mode
     {
         BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
-            replay_mode_enter_pattern, sizeof(replay_mode_enter_pattern)-1);
+            replay_gallery_enter_pattern, sizeof(replay_gallery_enter_pattern)-1);
         if (!p) {
             log_(L"Unable to patch: (replay-enter) code pattern not matched\n");
         }
@@ -1681,14 +1695,14 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
             log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
             log_(L"Enabling replay-enter event\n");
 
-            hook_call_point((DWORD)(p + replay_mode_enter_off),
-                enter_replay_mode_cp, 6, 1);
+            hook_call_point((DWORD)(p + replay_gallery_enter_off),
+                enter_replay_gallery_cp, 6, 1);
         }
     }
 
     {
         BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
-            replay_mode_exit_pattern, sizeof(replay_mode_exit_pattern)-1);
+            replay_gallery_exit_pattern, sizeof(replay_gallery_exit_pattern)-1);
         if (!p) {
             log_(L"Unable to patch: (replay-exit) code pattern not matched\n");
         }
@@ -1696,8 +1710,8 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
             log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
             log_(L"Enabling replay-exit event\n");
 
-            hook_call_point((DWORD)(p + replay_mode_exit_off),
-                exit_replay_mode_cp, 6, 1);
+            hook_call_point((DWORD)(p + replay_gallery_exit_off),
+                exit_replay_gallery_cp, 6, 1);
         }
     }
 
@@ -2217,6 +2231,40 @@ void module_exit_edit_mode(module_t *m)
     if (m->evt_exit_edit_mode != 0) {
         EnterCriticalSection(&_cs);
         lua_pushvalue(m->L, m->evt_exit_edit_mode);
+        lua_xmove(m->L, L, 1);
+        // push params
+        lua_pushvalue(L, 1); // ctx
+        if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
+            const char *err = luaL_checkstring(L, -1);
+            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
+            lua_pop(L, 1);
+        }
+        LeaveCriticalSection(&_cs);
+    }
+}
+
+void module_enter_replay_gallery(module_t *m)
+{
+    if (m->evt_enter_replay_gallery != 0) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(m->L, m->evt_enter_replay_gallery);
+        lua_xmove(m->L, L, 1);
+        // push params
+        lua_pushvalue(L, 1); // ctx
+        if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
+            const char *err = luaL_checkstring(L, -1);
+            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
+            lua_pop(L, 1);
+        }
+        LeaveCriticalSection(&_cs);
+    }
+}
+
+void module_exit_replay_gallery(module_t *m)
+{
+    if (m->evt_exit_replay_gallery != 0) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(m->L, m->evt_exit_replay_gallery);
         lua_xmove(m->L, L, 1);
         // push params
         lua_pushvalue(L, 1); // ctx
@@ -3851,19 +3899,28 @@ void exit_edit_mode_cp()
     }
 }
 
-DWORD enter_replay_mode(char *type, char *nstr)
+DWORD enter_replay_gallery(char *type, char *nstr)
 {
-    if (!_is_replay_mode) {
+    if (!_is_replay_gallery) {
         if (memcmp(type, "REPLAY", 6)==0 && memcmp(nstr, "00000000", 8)==0) {
-            _is_replay_mode = true;
-            set_context_field_boolean("is_replay", true);
-            log_(L"Entering REPLAY mode\n");
+            _is_replay_gallery = true;
+            set_context_field_boolean("is_replay_gallery", true);
+            DBG log_(L"Entering REPLAY gallery\n");
+
+            // lua callbacks
+            if (_config->_lua_enabled) {
+                list<module_t*>::iterator i;
+                for (i = _modules.begin(); i != _modules.end(); i++) {
+                    module_t *m = *i;
+                    module_enter_replay_gallery(m);
+                }
+            }
         }
     }
     return 0;
 }
 
-void enter_replay_mode_cp()
+void enter_replay_gallery_cp()
 {
     __asm {
         // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
@@ -3880,7 +3937,7 @@ void enter_replay_mode_cp()
         lea edx,[ebp-0x10]
         push edx  // pointer to 8-byte numerical str
         push esi  // pointer to datafile name
-        call enter_replay_mode
+        call enter_replay_gallery
         add esp,0x08  // pop params
         pop edi
         pop esi
@@ -3895,18 +3952,27 @@ void enter_replay_mode_cp()
     }
 }
 
-DWORD exit_replay_mode()
+DWORD exit_replay_gallery()
 {
-    if (_is_replay_mode) {
-        log_(L"Exiting REPLAY mode\n");
-        _is_replay_mode = false;
-        set_context_field_nil("is_replay");
+    if (_is_replay_gallery) {
+        DBG log_(L"Exiting REPLAY gallery\n");
+        _is_replay_gallery = false;
+        set_context_field_nil("is_replay_gallery");
         set_context_field_nil("replay_tournament_type");
+
+        // lua callbacks
+        if (_config->_lua_enabled) {
+            list<module_t*>::iterator i;
+            for (i = _modules.begin(); i != _modules.end(); i++) {
+                module_t *m = *i;
+                module_exit_replay_gallery(m);
+            }
+        }
     }
     return 0;
 }
 
-void exit_replay_mode_cp()
+void exit_replay_gallery_cp()
 {
     __asm {
         // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
@@ -3920,7 +3986,7 @@ void exit_replay_mode_cp()
         push edx
         push esi
         push edi
-        call exit_replay_mode
+        call exit_replay_gallery
         pop edi
         pop esi
         pop edx
