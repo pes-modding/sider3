@@ -48,6 +48,8 @@ void read_stad_name_cp();
 void read_no_stad_name_cp();
 void enter_edit_mode_cp();
 void exit_edit_mode_cp();
+void enter_replay_mode_cp();
+void exit_replay_mode_cp();
 void write_stadium_choice_initial_cp();
 void write_stadium_choice_changed_cp1();
 void write_stadium_choice_changed_cp2();
@@ -65,6 +67,7 @@ int convert_tournament_id2();
 int convert_tournament_id(int id);
 
 bool _is_edit_mode(false);
+bool _is_replay_mode(false);
 int _curr_tournament_id(0);
 bool _replace_trophy(false);
 bool _had_stadium_choice(false);
@@ -186,6 +189,17 @@ struct READ_REPL {
 };
 
 struct STAD_STRUCT {
+    DWORD stadium;
+    DWORD timeofday;
+    DWORD weather;
+    DWORD season;
+};
+
+struct REPLAY_INFO {
+    BYTE players_info[0xfa0];
+    DWORD unknown1;
+    WORD db1930;
+    WORD tournament_type;
     DWORD stadium;
     DWORD timeofday;
     DWORD weather;
@@ -1653,6 +1667,37 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
                 enter_edit_mode_cp, 6, 5);
             hook_call_point((DWORD)(p + exit_edit_mode_off),
                 exit_edit_mode_cp, 6, 5);
+        }
+    }
+
+    // replay mode
+    {
+        BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
+            replay_mode_enter_pattern, sizeof(replay_mode_enter_pattern)-1);
+        if (!p) {
+            log_(L"Unable to patch: (replay-enter) code pattern not matched\n");
+        }
+        else {
+            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+            log_(L"Enabling replay-enter event\n");
+
+            hook_call_point((DWORD)(p + replay_mode_enter_off),
+                enter_replay_mode_cp, 6, 1);
+        }
+    }
+
+    {
+        BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
+            replay_mode_exit_pattern, sizeof(replay_mode_exit_pattern)-1);
+        if (!p) {
+            log_(L"Unable to patch: (replay-exit) code pattern not matched\n");
+        }
+        else {
+            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+            log_(L"Enabling replay-exit event\n");
+
+            hook_call_point((DWORD)(p + replay_mode_exit_off),
+                exit_replay_mode_cp, 6, 1);
         }
     }
 
@@ -3383,12 +3428,15 @@ void write_stadium_cp()
     }
 }
 
-DWORD write_stadium_for_replay(STAD_STRUCT *ss)
+DWORD write_stadium_for_replay(STAD_STRUCT *ss, REPLAY_INFO *ri)
 {
     // update match info
     set_match_info();
 
     if (_config->_lua_enabled) {
+        WORD tt = ri->tournament_type;
+        set_context_field_int("replay_tournament_type", (int)tt);
+
         // lua callbacks
         list<module_t*>::iterator i;
         for (i = _modules.begin(); i != _modules.end(); i++) {
@@ -3433,11 +3481,12 @@ void write_stadium_for_replay_cp()
         push edx
         push esi
         push edi
+        push esi  // replay info
         mov eax,edi
         add eax,0x150a0
         push eax  // stadium base addr
         call write_stadium_for_replay
-        add esp,0x04     // pop parameters
+        add esp,0x08     // pop parameters
         pop edi
         pop esi
         pop edx
@@ -3798,6 +3847,89 @@ void exit_edit_mode_cp()
         pop ebp
         popfd
         mov dword ptr ds:[esi+0xc8], 4
+        retn
+    }
+}
+
+DWORD enter_replay_mode(char *type, char *nstr)
+{
+    if (!_is_replay_mode) {
+        if (memcmp(type, "REPLAY", 6)==0 && memcmp(nstr, "00000000", 8)==0) {
+            _is_replay_mode = true;
+            set_context_field_boolean("is_replay", true);
+            log_(L"Entering REPLAY mode\n");
+        }
+    }
+    return 0;
+}
+
+void enter_replay_mode_cp()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        pushfd
+        push ebp
+        push eax
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        lea edx,[ebp-0x10]
+        push edx  // pointer to 8-byte numerical str
+        push esi  // pointer to datafile name
+        call enter_replay_mode
+        add esp,0x08  // pop params
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop eax
+        pop ebp
+        popfd
+        lea edx,[ebp-0x10]
+        retn
+    }
+}
+
+DWORD exit_replay_mode()
+{
+    if (_is_replay_mode) {
+        log_(L"Exiting REPLAY mode\n");
+        _is_replay_mode = false;
+        set_context_field_nil("is_replay");
+        set_context_field_nil("replay_tournament_type");
+    }
+    return 0;
+}
+
+void exit_replay_mode_cp()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        pushfd
+        push ebp
+        push eax
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        call exit_replay_mode
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop eax
+        pop ebp
+        popfd
+        mov eax,dword ptr ds:[esi+0x1cc]
         retn
     }
 }

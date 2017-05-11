@@ -207,6 +207,20 @@ static BYTE edit_mode_pattern[25] =
 static int enter_edit_mode_off = 0x67;
 static int exit_edit_mode_off = 0x44;
 
+// replay mode patterns
+static BYTE replay_mode_enter_pattern[12] =
+    "\x6a\x08"
+    "\x8d\x95\xf0\xff\xff\xff"
+    "\x52"
+    "\x89\xf1";
+static int replay_mode_enter_off = 2;
+
+static BYTE replay_mode_exit_pattern[16] =
+    "\x8b\x86\xcc\x01\x00\x00"
+    "\x8b\x50\x04"
+    "\x8d\x8e\xcc\x01\x00\x00";
+static int replay_mode_exit_off = 0;
+
 // stadium choice: initial
 static BYTE stadium_choice_initial_pattern[27] =
     "\x83\xf8\x22"
