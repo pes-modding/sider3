@@ -73,6 +73,16 @@ function m.exit_edit_mode(ctx)
     tlog("ctx: %s", t2s(ctx))
 end
 
+function m.enter_replay_gallery(ctx)
+    tlog("Entered REPLAY gallery")
+    tlog("ctx: %s", t2s(ctx))
+end
+
+function m.exit_replay_gallery(ctx)
+    tlog("Exited REPLAY gallery")
+    tlog("ctx: %s", t2s(ctx))
+end
+
 function m.init(ctx)
    ctx.register("set_home_team", m.set_home)
    ctx.register("set_away_team", m.set_away)
@@ -85,6 +95,8 @@ function m.init(ctx)
    ctx.register("set_conditions_for_replay", m.set_conditions_for_replay)
    ctx.register("enter_edit_mode", m.enter_edit_mode)
    ctx.register("exit_edit_mode", m.exit_edit_mode)
+   ctx.register("enter_replay_gallery", m.enter_replay_gallery)
+   ctx.register("exit_replay_gallery", m.exit_replay_gallery)
 end
 
 return m

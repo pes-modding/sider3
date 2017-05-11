@@ -1,7 +1,7 @@
 Sider 3 Lua Module Programmers Guide
 ====================================
 For sider.dll version: 3.4.1
-May 9, 2017
+May 11, 2017
 
 
 
@@ -161,9 +161,29 @@ ctx.weather    - The values are: 0 - Fine, 1 - Rainy
 
 ctx.match_time - Duration of the match in minutes.
 
-ctx.is_edit_mode  -  The gets set to true, when the game enters
-                     the Edit mode. When the player return back to
+ctx.is_edit_mode  -  The field gets set to true, when the game enters
+                     the Edit mode. When the player returns back to
                      main menu, the field is set to nil
+
+ctx.is_replay_gallery - This flag gets set to true, when the user enters
+                        the Replay Gallery. When the players returns back
+                        to main menu, the field is set to nil
+
+ctx.replay_tournament_type - While showing replays from Replay Gallery,
+                             this field contains an id, which identifies
+                             the game mode that the replay was recorded in.
+
+     NOTE that this is different from tournament_id.
+     You will need to experiment to see the full set
+     of values that this field can take.
+     Some examples are:
+        8 - Exhibition
+        10 - Cup
+        15 - UEFA Champions League
+        16 - UEFA Europa League
+        18 - League
+        21 - UEFA Champions League Exhibition
+        22 - UEFA Europa League Exhbition
 
 
 The context is a simple Lua table, so you can change the values as you
@@ -436,6 +456,22 @@ Return value expected: nil
 
 This event fires when user exits the game's Edit Mode. The boolean
 field "is_edit_mode" is removed from the context (set to nil).
+
+
+-- Event name: "enter_replay_gallery"
+Handler function: f(ctx)
+Return value expected: nil
+
+This event fires when user enters the game's Replay Gallery. There is also
+a boolean field in the context that is set to true: "is_replay_gallery".
+
+
+-- Event name: "exit_replay_gallery"
+Handler function: f(ctx)
+Return value expected: nil
+
+This event fires when user exits the game's Replay Gallery. The boolean
+field "is_replay_gallery" is removed from the context (set to nil).
 
 
 NOTE: Some events can fire multiple times for the same "action".
