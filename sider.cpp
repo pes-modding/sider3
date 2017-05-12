@@ -197,6 +197,16 @@ struct STAD_STRUCT {
     DWORD season;
 };
 
+struct STADIUM_INFO {
+    DWORD unknown0;
+    BYTE stadium_id;
+    BYTE unknown1;
+    BYTE unknown2;
+    BYTE is_editable;
+    DWORD stadium_flags;
+    char name[0x7c];
+};
+
 struct REPLAY_INFO {
     BYTE players_info[0xfa0];
     DWORD unknown1;
@@ -3231,6 +3241,19 @@ DWORD get_current_settings_addr()
     return 0;
 }
 
+DWORD get_stadium_base_addr()
+{
+    BYTE *p = *(BYTE**)_tid_addr1;
+    if (p) {
+        p = *(BYTE**)(p+0x30);
+        if (p) {
+            p = p + 0xec140c;
+            return (DWORD)p;
+        }
+    }
+    return 0;
+}
+
 int convert_tournament_id2()
 {
     // [[26711b8]+0x34]+0x537b8 : for v1.04
@@ -3481,6 +3504,7 @@ DWORD write_stadium_for_replay(STAD_STRUCT *ss, REPLAY_INFO *ri)
     // update match info
     set_match_info();
 
+    bool set_by_module = false;
     if (_config->_lua_enabled) {
         WORD tt = ri->tournament_type;
         set_context_field_int("replay_tournament_type", (int)tt);
@@ -3490,6 +3514,7 @@ DWORD write_stadium_for_replay(STAD_STRUCT *ss, REPLAY_INFO *ri)
         for (i = _modules.begin(); i != _modules.end(); i++) {
             module_t *m = *i;
             if (module_set_stadium_for_replay(m, ss)) {
+                set_by_module = true;
                 break;
             }
         }
@@ -3508,6 +3533,31 @@ DWORD write_stadium_for_replay(STAD_STRUCT *ss, REPLAY_INFO *ri)
         // clear stadium_choice in context
         set_context_field_nil("stadium_choice");
         _had_stadium_choice = false;
+    }
+
+    if (!set_by_module) {
+        // fallback mechanism to try load the stadium that exists
+        bool have_stadium = false;
+        STADIUM_INFO *stads = (STADIUM_INFO*)get_stadium_base_addr();
+        if (stads) {
+            DBG log_(L"stads addr: %p\n", stads);
+            int count = 0;
+            STADIUM_INFO *p;
+            for (p = stads; p && p->stadium_id != 0; p++) {
+                count += 1;
+                DBG logu_("stadium: %d : %s\n", p->stadium_id, p->name);
+                if (p->stadium_id == ss->stadium) {
+                    have_stadium = true;
+                }
+            }
+            log_(L"LiveCPK/cpk stadium count: %d\n", count);
+            if (!have_stadium) {
+                log_(L"Unknown stadium: %d\n", ss->stadium);
+                // use first stadium
+                ss->stadium = stads[0].stadium_id;
+                log_(L"Switching replay to stadium: %d\n", ss->stadium);
+            }
+        }
     }
 
     DBG log_(L"replay: stadium=%d, timeofday=%d, weather=%d, season=%d\n",
