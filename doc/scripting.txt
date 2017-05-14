@@ -1,7 +1,7 @@
 Sider 3 Lua Module Programmers Guide
 ====================================
 For sider.dll version: 3.4.1
-May 11, 2017
+May 14, 2017
 
 
 
@@ -385,6 +385,14 @@ for timeofday: 0 - means Day, 1 - means Night;
 for weather: 0 - Fine (sunny), 1 - Rain;
 for season: 0 - Summer, 1 - Winter
 
+You handler function can either return nil, which means that other modules
+can receive the event and process it. Or, the handler can return a table
+of options, which are either modified or not. Returning a table of options
+stops further propagation of the event. You cannot change the stadium id -
+for that use "set_stadium" event. But you can change any of the other
+three settings: just assign them different values.
+For an example usage - see stadium.lua module.
+
 
 - Event name: "set_stadium_for_replay"
 Handler function: f(ctx, options)
@@ -405,15 +413,6 @@ right after "set_stadium_for_replay". Same behaviour as with "set_conditions"
 event. If you return a table with values, then you can modify the weather,
 season, and timeofday of the replay. Return nil, if you don't want to
 modify any of those.
-
-
-You handler function can either return nil, which means that other modules
-can receive the event and process it. Or, the handler can return a table
-of options, which are either modified or not. Returning a table of options
-stops further propagation of the event. You cannot change the stadium id -
-for that use "set_stadium" event. But you can change any of the other
-three settings: just assign them different values.
-For an example usage - see stadium.lua module.
 
 
 -- Event name: "get_ball_name"
