@@ -3391,7 +3391,7 @@ void write_tournament_id_cp()
 
 DWORD write_exhib_id(DWORD exhib_id)
 {
-    if (_curr_tournament_id == 0) {
+    if (_curr_tournament_id == 0 || _is_replay_gallery) {
         set_match_info();
         set_tid(convert_tournament_id2());
         DBG log_(L"exhib: tournament_id = %d\n", _curr_tournament_id);
