@@ -95,11 +95,95 @@ void set_context_field_boolean(const char *name, bool value);
 void set_context_field_int(const char *name, int value);
 void set_context_field_nil(const char *name);
 
-bool trophy_server_make_key(char *file_name, char *key);
-wstring *trophy_server_get_filepath(char *file_name, char *key);
-
 typedef unordered_map<string,wstring*> lookup_cache_t;
 lookup_cache_t _lookup_cache;
+
+typedef struct {
+    char *filename;
+    wstring *fn;
+} addr_map_value_t;
+
+typedef unordered_map<DWORD,addr_map_value_t> addr_map_t;
+class addr_cache_t {
+    addr_map_t _map;
+    CRITICAL_SECTION _acs;
+    int _hits;
+    int _false_hits;
+public:
+    addr_cache_t() : _hits(0), _false_hits(0) {
+        InitializeCriticalSection(&_acs);
+    }
+    ~addr_cache_t() {
+        log_(L"addr_cache: hits:%d, false_hits:%d, size:%d\n",
+            _hits, _false_hits, _map.size());
+        DeleteCriticalSection(&_acs);
+    }
+    bool lookup(char *filename, wstring **res) {
+        EnterCriticalSection(&_acs);
+        addr_map_t::iterator i = _map.find((DWORD)filename);
+        if (i != _map.end()) {
+            if (strcmp(i->second.filename, filename)==0) {
+                *res = i->second.fn;
+                //logu_("lookup FOUND: (%08x) %s\n", i->first, filename);
+                _hits++;
+                LeaveCriticalSection(&_acs);
+                return true;
+            }
+            else {
+                //logu_("lookup FALSE MATCH: (%08x) %s\n", i->first, filename);
+                _false_hits++;
+                char *s = i->second.filename;
+                _map.erase(i);
+                if (s) free(s);
+            }
+        }
+        *res = NULL;
+        LeaveCriticalSection(&_acs);
+        return false;
+    }
+    bool remove(char *filename, wstring **res) {
+        EnterCriticalSection(&_acs);
+        addr_map_t::iterator i = _map.find((DWORD)filename);
+        if (i != _map.end()) {
+            *res = NULL;
+            char *s = i->second.filename;
+            if (strcmp(s, filename)==0) {
+                *res = i->second.fn;
+                //logu_("lookup FOUND: (%08x) %s\n", i->first, filename);
+                _hits++;
+            }
+            else {
+                _false_hits++;
+            }
+            _map.erase(i);
+            if (s) free(s);
+            //logu_("remove FOUND: (%08x) %s\n", i->first, filename);
+            LeaveCriticalSection(&_acs);
+            return true;
+        }
+        *res = NULL;
+        LeaveCriticalSection(&_acs);
+        return false;
+    }
+    void put(char *filename, wstring *fn) {
+        EnterCriticalSection(&_acs);
+        addr_map_value_t v;
+        v.filename = strdup(filename);
+        v.fn = fn;
+        pair<addr_map_t::iterator,bool> res = _map.insert(
+            pair<DWORD,addr_map_value_t>((DWORD)filename, v));
+        if (!res.second) {
+            // replace existing
+            char *s = res.first->second.filename;
+            if (s) free(s);
+            res.first->second.filename = v.filename;
+            res.first->second.fn = v.fn;
+        }
+        LeaveCriticalSection(&_acs);
+    }
+};
+
+addr_cache_t *_addr_cache(NULL);
 
 struct module_t {
     lookup_cache_t *cache;
@@ -211,7 +295,8 @@ struct REPLAY_INFO {
     BYTE players_info[0xfa0];
     DWORD unknown1;
     WORD db1930;
-    WORD tournament_type;
+    BYTE tournament_type;
+    BYTE unknown2;
     DWORD stadium;
     DWORD timeofday;
     DWORD weather;
@@ -345,6 +430,7 @@ public:
     bool _lookup_cache_enabled;
     bool _lua_enabled;
     bool _luajit_extensions_enabled;
+    bool _ac_off;
     list<wstring> _lua_extra_globals;
     int _dll_mapping_option;
     wstring _section_name;
@@ -373,6 +459,7 @@ public:
                  _lookup_cache_enabled(true),
                  _lua_enabled(true),
                  _luajit_extensions_enabled(false),
+                 _ac_off(true),
                  _dll_mapping_option(0),
                  _free_select_sides(false),
                  _free_first_player(false),
@@ -469,6 +556,10 @@ public:
         _luajit_extensions_enabled = GetPrivateProfileInt(_section_name.c_str(),
             L"luajit.ext.enabled", _luajit_extensions_enabled,
             config_ini);
+
+        _ac_off = GetPrivateProfileInt(_section_name.c_str(),
+            L"address-cache.enabled", !_ac_off,
+            config_ini) == 0;
         
         _dll_mapping_option = GetPrivateProfileInt(_section_name.c_str(),
             L"dll-mapping.option", _dll_mapping_option,
@@ -1347,12 +1438,14 @@ DWORD install_func(LPVOID thread_param) {
     _is_edit_mode = false;
 
     InitializeCriticalSection(&_cs);
+    _addr_cache = new addr_cache_t();
 
     log_(L"debug = %d\n", _config->_debug);
     log_(L"livecpk.enabled = %d\n", _config->_livecpk_enabled);
     log_(L"lookup-cache.enabled = %d\n", _config->_lookup_cache_enabled);
     log_(L"lua.enabled = %d\n", _config->_lua_enabled);
     log_(L"luajit.ext.enabled = %d\n", _config->_luajit_extensions_enabled);
+    log_(L"address-cache.enabled = %d\n", (int)(!_config->_ac_off));
     log_(L"close.on.exit = %d\n", _config->_close_sider_on_exit);
     log_(L"start.minimized = %d\n", _config->_start_minimized);
 
@@ -2047,6 +2140,7 @@ wstring* _have_live_file(char *file_name)
 
 wstring* have_live_file(char *file_name)
 {
+    //logu_("have_live_file: %p --> %s\n", (DWORD)file_name, file_name);
     if (!_config->_lookup_cache_enabled) {
         // no cache
         return _have_live_file(file_name);
@@ -2582,6 +2676,7 @@ wstring* have_content(char *file_name)
 {
     char key[512];
     list<module_t*>::iterator i;
+    //logu_("have_content: %p --> %s\n", (DWORD)file_name, file_name);
     for (i = _modules.begin(); i != _modules.end(); i++) {
         module_t *m = *i;
         if (!m->evt_lcpk_make_key && !m->evt_lcpk_get_filepath) {
@@ -2633,10 +2728,12 @@ DWORD lcpk_get_file_info(struct FILE_INFO* file_info)
     filename = (replacement[0]!='\0') ? replacement : filename;
 
     wstring *fn;
-    if (_config->_lua_enabled) do_rewrite(filename);
-    fn = (_config->_lua_enabled) ? have_content(filename) : NULL;
-    fn = (fn) ? fn : have_live_file(filename);
-
+    if (_config->_ac_off || !_addr_cache->lookup(filename, &fn)) {
+        if (_config->_lua_enabled) do_rewrite(filename);
+        fn = (_config->_lua_enabled) ? have_content(filename) : NULL;
+        fn = (fn) ? fn : have_live_file(filename);
+        if (!_config->_ac_off) _addr_cache->put(filename, fn);
+    }
     if (fn != NULL) {
         DWORD size = 0;
         HANDLE handle;
@@ -2759,6 +2856,7 @@ BOOL WINAPI lcpk_at_read_file(
         lpBuffer, *lpNumberOfBytesRead);
 
     if (rs->dw4) {
+        //log_(L"closing rs->dw4: %08x\n", (DWORD)rs->dw4);
         CloseHandle((HANDLE)rs->dw4);
     }
 
@@ -2768,6 +2866,8 @@ BOOL WINAPI lcpk_at_read_file(
 DWORD lcpk_before_read(struct READ_STRUCT* rs)
 {
     if (rs && rs->filename) {
+        //logu_("lcpk_before_read: %p --> %s\n",
+        //    (DWORD)(rs->filename), rs->filename);
         DBG {
             logu_("[%d] lcpk_before_read:: Preparing read into buffer: %p from %s (%08x : %08x)\n",
                 GetCurrentThreadId(),
@@ -2776,9 +2876,11 @@ DWORD lcpk_before_read(struct READ_STRUCT* rs)
         }
 
         wstring *fn = NULL;
-        if (_config->_lua_enabled) do_rewrite(rs->filename);
-        fn = (_config->_lua_enabled) ? have_content(rs->filename) : NULL;
-        fn = (fn) ? fn : have_live_file(rs->filename);
+        if (_config->_ac_off || !_addr_cache->remove(rs->filename, &fn)) {
+            if (_config->_lua_enabled) do_rewrite(rs->filename);
+            fn = (_config->_lua_enabled) ? have_content(rs->filename) : NULL;
+            fn = (fn) ? fn : have_live_file(rs->filename);
+        }
         if (fn != NULL) {
             HANDLE handle;
             handle = CreateFileW(fn->c_str(),         // file to open
@@ -2791,6 +2893,7 @@ DWORD lcpk_before_read(struct READ_STRUCT* rs)
 
             if (handle != INVALID_HANDLE_VALUE)
             {
+                //log_(L"rs->dw4 was: %08x\n", rs->dw4);
                 rs->dw4 = (DWORD)handle;
             }
 
@@ -2837,9 +2940,12 @@ DWORD lcpk_lookup_file(char *filename, struct CPK_INFO* cpk_info)
     char tmp[256];
     if (cpk_info && cpk_info->cpk_filename) {
         wstring *fn;
-        if (_config->_lua_enabled) do_rewrite(filename);
-        fn = (_config->_lua_enabled) ? have_content(filename) : NULL;
-        fn = (fn) ? fn : have_live_file(filename);
+        if (_config->_ac_off || !_addr_cache->lookup(filename, &fn)) {
+            if (_config->_lua_enabled) do_rewrite(filename);
+            fn = (_config->_lua_enabled) ? have_content(filename) : NULL;
+            fn = (fn) ? fn : have_live_file(filename);
+            if (!_config->_ac_off) _addr_cache->put(filename, fn);
+        }
         if (fn != NULL) {
             if (memcmp(cpk_info->cpk_filename + 7, "dt36_win", 8)==0) {
                 // replace with a known original filename
@@ -4115,6 +4221,7 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
                 log_(L"Unmapping from PES.\n");
 
                 if (L) { lua_close(L); }
+                if (_addr_cache) delete _addr_cache;
                 DeleteCriticalSection(&_cs);
 
                 DWORD oldProtection;
