@@ -211,7 +211,8 @@ struct REPLAY_INFO {
     BYTE players_info[0xfa0];
     DWORD unknown1;
     WORD db1930;
-    WORD tournament_type;
+    BYTE tournament_type;
+    BYTE unknown2;
     DWORD stadium;
     DWORD timeofday;
     DWORD weather;
