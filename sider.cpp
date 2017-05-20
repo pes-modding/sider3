@@ -106,27 +106,25 @@ typedef struct {
 typedef unordered_map<DWORD,addr_map_value_t> addr_map_t;
 class addr_cache_t {
     addr_map_t _map;
-    CRITICAL_SECTION _acs;
+    CRITICAL_SECTION *_acs;
     int _hits;
     int _false_hits;
 public:
-    addr_cache_t() : _hits(0), _false_hits(0) {
-        InitializeCriticalSection(&_acs);
-    }
+    addr_cache_t(CRITICAL_SECTION *cs) :
+        _hits(0), _false_hits(0), _acs(cs) {}
     ~addr_cache_t() {
         log_(L"addr_cache: hits:%d, false_hits:%d, size:%d\n",
             _hits, _false_hits, _map.size());
-        DeleteCriticalSection(&_acs);
     }
     bool lookup(char *filename, wstring **res) {
-        EnterCriticalSection(&_acs);
+        EnterCriticalSection(_acs);
         addr_map_t::iterator i = _map.find((DWORD)filename);
         if (i != _map.end()) {
             if (strcmp(i->second.filename, filename)==0) {
                 *res = i->second.fn;
                 //logu_("lookup FOUND: (%08x) %s\n", i->first, filename);
                 _hits++;
-                LeaveCriticalSection(&_acs);
+                LeaveCriticalSection(_acs);
                 return true;
             }
             else {
@@ -138,11 +136,11 @@ public:
             }
         }
         *res = NULL;
-        LeaveCriticalSection(&_acs);
+        LeaveCriticalSection(_acs);
         return false;
     }
     bool remove(char *filename, wstring **res) {
-        EnterCriticalSection(&_acs);
+        EnterCriticalSection(_acs);
         addr_map_t::iterator i = _map.find((DWORD)filename);
         if (i != _map.end()) {
             *res = NULL;
@@ -158,15 +156,15 @@ public:
             _map.erase(i);
             if (s) free(s);
             //logu_("remove FOUND: (%08x) %s\n", i->first, filename);
-            LeaveCriticalSection(&_acs);
+            LeaveCriticalSection(_acs);
             return true;
         }
         *res = NULL;
-        LeaveCriticalSection(&_acs);
+        LeaveCriticalSection(_acs);
         return false;
     }
     void put(char *filename, wstring *fn) {
-        EnterCriticalSection(&_acs);
+        EnterCriticalSection(_acs);
         addr_map_value_t v;
         v.filename = strdup(filename);
         v.fn = fn;
@@ -179,7 +177,7 @@ public:
             res.first->second.filename = v.filename;
             res.first->second.fn = v.fn;
         }
-        LeaveCriticalSection(&_acs);
+        LeaveCriticalSection(_acs);
     }
 };
 
@@ -459,7 +457,7 @@ public:
                  _lookup_cache_enabled(true),
                  _lua_enabled(true),
                  _luajit_extensions_enabled(false),
-                 _ac_off(true),
+                 _ac_off(false),
                  _dll_mapping_option(0),
                  _free_select_sides(false),
                  _free_first_player(false),
@@ -1438,7 +1436,7 @@ DWORD install_func(LPVOID thread_param) {
     _is_edit_mode = false;
 
     InitializeCriticalSection(&_cs);
-    _addr_cache = new addr_cache_t();
+    _addr_cache = new addr_cache_t(&_cs);
 
     log_(L"debug = %d\n", _config->_debug);
     log_(L"livecpk.enabled = %d\n", _config->_livecpk_enabled);
