@@ -197,6 +197,28 @@ struct STAD_STRUCT {
     DWORD season;
 };
 
+struct MATCH_INFO_STRUCT {
+    WORD match_id;
+    WORD tournament_id_encoded;
+    BYTE match_leg;
+    BYTE unknown0[3];
+    BYTE match_info;
+    BYTE unknown1[3];
+    DWORD unknown2[2];
+    BYTE match_time;
+    BYTE unknown3[3];
+    DWORD unknown4[4];
+    BYTE db0x03;
+    BYTE db0x12;
+    BYTE stadium_choice;
+    BYTE unknown5;
+    DWORD unknown6[3];
+    DWORD weather_effects;
+    DWORD unknown7[10];
+    struct STAD_STRUCT stad;
+    DWORD home_team_encoded;
+};
+
 struct STADIUM_INFO {
     DWORD unknown0;
     BYTE stadium_id;
@@ -2306,11 +2328,12 @@ void module_set_stadium_choice(module_t *m, int stadium_id, bool initial)
     }
 }
 
-bool module_set_stadium(module_t *m, STAD_STRUCT *ss)
+bool module_set_stadium(module_t *m, MATCH_INFO_STRUCT *mi)
 {
     bool res(false);
     if (m->evt_set_stadium != 0) {
         EnterCriticalSection(&_cs);
+        STAD_STRUCT *ss = &(mi->stad);
         lua_pushvalue(m->L, m->evt_set_stadium);
         lua_xmove(m->L, L, 1);
         // push params
@@ -2322,6 +2345,8 @@ bool module_set_stadium(module_t *m, STAD_STRUCT *ss)
         lua_setfield(L, -2, "timeofday");
         lua_pushinteger(L, ss->weather);
         lua_setfield(L, -2, "weather");
+        lua_pushinteger(L, mi->weather_effects);
+        lua_setfield(L, -2, "weather_effects");
         lua_pushinteger(L, ss->season);
         lua_setfield(L, -2, "season");
         if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
@@ -2347,11 +2372,12 @@ bool module_set_stadium(module_t *m, STAD_STRUCT *ss)
     return res;
 }
 
-bool module_set_conditions(module_t *m, STAD_STRUCT *ss)
+bool module_set_conditions(module_t *m, MATCH_INFO_STRUCT *mi)
 {
     bool res(false);
     if (m->evt_set_conditions != 0) {
         EnterCriticalSection(&_cs);
+        STAD_STRUCT *ss = &(mi->stad);
         lua_pushvalue(m->L, m->evt_set_conditions);
         lua_xmove(m->L, L, 1);
         // push params
@@ -2363,6 +2389,8 @@ bool module_set_conditions(module_t *m, STAD_STRUCT *ss)
         lua_setfield(L, -2, "timeofday");
         lua_pushinteger(L, ss->weather);
         lua_setfield(L, -2, "weather");
+        lua_pushinteger(L, mi->weather_effects);
+        lua_setfield(L, -2, "weather_effects");
         lua_pushinteger(L, ss->season);
         lua_setfield(L, -2, "season");
         if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
@@ -2378,6 +2406,11 @@ bool module_set_conditions(module_t *m, STAD_STRUCT *ss)
             lua_getfield(L, -1, "weather");
             if (lua_isnumber(L, -1)) {
                 ss->weather = luaL_checkinteger(L, -1);
+            }
+            lua_pop(L, 1);
+            lua_getfield(L, -1, "weather_effects");
+            if (lua_isnumber(L, -1)) {
+                mi->weather_effects = luaL_checkinteger(L, -1);
             }
             lua_pop(L, 1);
             lua_getfield(L, -1, "season");
@@ -3006,9 +3039,11 @@ void set_match_info()
         return;
     }
 
-    int match_id = (int)*((WORD*)settings_addr);
-    int match_leg = (int)*((BYTE*)settings_addr + 4);
-    int match_info = (int)*((BYTE*)settings_addr + 8);
+    MATCH_INFO_STRUCT *mis = (MATCH_INFO_STRUCT*)settings_addr;
+
+    int match_id = (int)(mis->match_id);
+    int match_leg = (int)(mis->match_leg);
+    int match_info = (int)(mis->match_info);
 
     if (match_id != 0 && (match_leg == 0 || match_leg == 1)) {
         set_context_field_int("match_leg", match_leg+1);
@@ -3436,17 +3471,19 @@ DWORD write_stadium(STAD_STRUCT *ss)
     set_match_info();
 
     if (_config->_lua_enabled) {
+        MATCH_INFO_STRUCT *mi = (MATCH_INFO_STRUCT*)((BYTE*)ss - 0x64);
+
         // lua callbacks
         list<module_t*>::iterator i;
         for (i = _modules.begin(); i != _modules.end(); i++) {
             module_t *m = *i;
-            if (module_set_stadium(m, ss)) {
+            if (module_set_stadium(m, mi)) {
                 break;
             }
         }
         for (i = _modules.begin(); i != _modules.end(); i++) {
             module_t *m = *i;
-            if (module_set_conditions(m, ss)) {
+            if (module_set_conditions(m, mi)) {
                 break;
             }
         }
@@ -3454,11 +3491,11 @@ DWORD write_stadium(STAD_STRUCT *ss)
         set_context_field_int("stadium", ss->stadium);
         set_context_field_int("timeofday", ss->timeofday);
         set_context_field_int("weather", ss->weather);
+        set_context_field_int("weather_effects", mi->weather_effects);
         set_context_field_int("season", ss->season);
 
         // sync the thumbnail
-        BYTE *p = (BYTE*)ss - 0x40 + 6;
-        *p = ss->stadium;
+        mi->stadium_choice = ss->stadium;
 
         // clear stadium_choice in context
         set_context_field_nil("stadium_choice");
