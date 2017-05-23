@@ -2726,8 +2726,8 @@ DWORD lcpk_get_file_info(struct FILE_INFO* file_info)
     filename = (replacement[0]!='\0') ? replacement : filename;
 
     wstring *fn;
-    if (_config->_lua_enabled) do_rewrite(filename);
     if (_config->_ac_off || !_addr_cache->lookup(filename, &fn)) {
+        if (_config->_lua_enabled) do_rewrite(filename);
         fn = (_config->_lua_enabled) ? have_content(filename) : NULL;
         fn = (fn) ? fn : have_live_file(filename);
         if (!_config->_ac_off) _addr_cache->put(filename, fn);
@@ -2874,8 +2874,8 @@ DWORD lcpk_before_read(struct READ_STRUCT* rs)
         }
 
         wstring *fn = NULL;
-        if (_config->_lua_enabled) do_rewrite(rs->filename);
         if (_config->_ac_off || !_addr_cache->remove(rs->filename, &fn)) {
+            if (_config->_lua_enabled) do_rewrite(rs->filename);
             fn = (_config->_lua_enabled) ? have_content(rs->filename) : NULL;
             fn = (fn) ? fn : have_live_file(rs->filename);
         }
@@ -2938,8 +2938,8 @@ DWORD lcpk_lookup_file(char *filename, struct CPK_INFO* cpk_info)
     char tmp[256];
     if (cpk_info && cpk_info->cpk_filename) {
         wstring *fn;
-        if (_config->_lua_enabled) do_rewrite(filename);
         if (_config->_ac_off || !_addr_cache->lookup(filename, &fn)) {
+            if (_config->_lua_enabled) do_rewrite(filename);
             fn = (_config->_lua_enabled) ? have_content(filename) : NULL;
             fn = (fn) ? fn : have_live_file(filename);
             if (!_config->_ac_off) _addr_cache->put(filename, fn);
@@ -3562,6 +3562,14 @@ DWORD write_stadium(STAD_STRUCT *ss)
         // sync the thumbnail
         BYTE *p = (BYTE*)ss - 0x40 + 6;
         *p = ss->stadium;
+
+        // enforce rain/snow effects
+        if (ss->weather == 1) {
+            p = (BYTE*)ss - 0x30 + 4;
+            BYTE was = *p;
+            *p = 2;
+            log_(L"changed weather effects byte: %02x --> %02x\n", was, *p);
+        }
 
         // clear stadium_choice in context
         set_context_field_nil("stadium_choice");
