@@ -1,7 +1,7 @@
 Sider 3 Lua Module Programmers Guide
 ====================================
-For sider.dll version: 3.4.2
-May 16, 2017
+For sider.dll version: 3.4.3
+May 23, 2017
 
 
 
@@ -104,7 +104,7 @@ of the game. As more scripts/modules are created by the community
 the context object will probably also change, and include more and more
 information about the game.
 
-As of 3.4.2 release, this is what the context object has:
+As of 3.4.3 release, this is what the context object has:
 
 ctx.home_team  - id of the home team of the current match, after
                  it is selected in the exhibition match, or the next
@@ -158,6 +158,9 @@ ctx.timeofday  - The values are: 0 - Day, 1 - Night. Same as with
 ctx.season     - The values are: 0 - Summer, 1 - Winter.
 
 ctx.weather    - The values are: 0 - Fine, 1 - Rainy
+
+ctx.weather_effects - The known values are: 
+                        2 - enforce weather effects (rain falling)
 
 ctx.match_time - Duration of the match in minutes.
 
@@ -352,10 +355,12 @@ Return value expected: nil or number or table
 
 This event fires, when the stadium settings are chosen for the upcoming
 match. The "options" parameter is a Lua table which contains the following
-keys: "stadium", "timeofday", "weather", "season". Each of these has an
-integer value, as the game uses: for stadium - it is the id of the stadium,
+keys: "stadium", "timeofday", "weather", "weather_effects", "season".
+Each of these has an integer value, as the game uses:
+for stadium - it is the id of the stadium,
 for timeofday: 0 - means Day, 1 - means Night;
 for weather: 0 - Fine (sunny), 1 - Rain;
+for weather_effects: 2 - means enforce rain falling, other values - unknown
 for season: 0 - Summer, 1 - Winter
 
 You handler function can either return nil, which means that other modules
@@ -379,10 +384,12 @@ Return value expected: nil or table
 
 This event fires, when the stadium settings are chosen for the upcoming
 match. The "options" parameter is a Lua table which contains the following
-keys: "stadium", "timeofday", "weather", "season". Each of these has an
-integer value, as the game uses: for stadium - it is the id of the stadium,
+keys: "stadium", "timeofday", "weather", "weather_effects", "season".
+Each of these has an integer value, as the game uses:
+for stadium - it is the id of the stadium,
 for timeofday: 0 - means Day, 1 - means Night;
 for weather: 0 - Fine (sunny), 1 - Rain;
+for weather_effects: 2 - means enforce rain falling, other values - unknown
 for season: 0 - Summer, 1 - Winter
 
 You handler function can either return nil, which means that other modules
