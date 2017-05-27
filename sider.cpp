@@ -109,12 +109,15 @@ class addr_cache_t {
     CRITICAL_SECTION *_acs;
     int _hits;
     int _false_hits;
+    int _misses;
 public:
     addr_cache_t(CRITICAL_SECTION *cs) :
-        _hits(0), _false_hits(0), _acs(cs) {}
+        _hits(0), _false_hits(0), _misses(0), _acs(cs) {}
     ~addr_cache_t() {
-        log_(L"addr_cache: hits:%d, false_hits:%d, size:%d\n",
-            _hits, _false_hits, _map.size());
+        log_(L"addr_cache: hits:%d, false_hits:%d, misses:%d, size:%d\n",
+            _hits, _false_hits, _misses, _map.size());
+        log_(L"addr_cache: hit ratio: %0.1f %%\n",
+            _hits * 100.0 / (_hits + _false_hits + _misses));
     }
     bool lookup(char *filename, wstring **res) {
         EnterCriticalSection(_acs);
@@ -135,20 +138,25 @@ public:
                 if (s) free(s);
             }
         }
+        else {
+            _misses++;
+        }
         *res = NULL;
         LeaveCriticalSection(_acs);
         return false;
     }
     bool remove(char *filename, wstring **res) {
         EnterCriticalSection(_acs);
+        *res = NULL;
+        bool found(false);
         addr_map_t::iterator i = _map.find((DWORD)filename);
         if (i != _map.end()) {
-            *res = NULL;
             char *s = i->second.filename;
             if (strcmp(s, filename)==0) {
                 *res = i->second.fn;
                 //logu_("lookup FOUND: (%08x) %s\n", i->first, filename);
                 _hits++;
+                found = true;
             }
             else {
                 _false_hits++;
@@ -157,9 +165,11 @@ public:
             if (s) free(s);
             //logu_("remove FOUND: (%08x) %s\n", i->first, filename);
             LeaveCriticalSection(_acs);
-            return true;
+            return found;
         }
-        *res = NULL;
+        else {
+            _misses++;
+        }
         LeaveCriticalSection(_acs);
         return false;
     }
@@ -172,6 +182,7 @@ public:
             pair<DWORD,addr_map_value_t>((DWORD)filename, v));
         if (!res.second) {
             // replace existing
+            logu_("REPLACED for: %s\n", filename);
             char *s = res.first->second.filename;
             if (s) free(s);
             res.first->second.filename = v.filename;
@@ -3599,14 +3610,6 @@ DWORD write_stadium(STAD_STRUCT *ss)
 
         // sync the thumbnail
         mi->stadium_choice = ss->stadium;
-
-        // enforce rain/snow effects
-        if (ss->weather == 1) {
-            p = (BYTE*)ss - 0x30 + 4;
-            BYTE was = *p;
-            *p = 2;
-            log_(L"changed weather effects byte: %02x --> %02x\n", was, *p);
-        }
 
         // clear stadium_choice in context
         set_context_field_nil("stadium_choice");
