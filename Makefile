@@ -38,7 +38,7 @@ imageutil.obj: imageutil.cpp imageutil.h
 version.obj: version.cpp
 
 $(LUALIBPATH)\$(LUALIB):
-	cd $(LUALIBPATH) && msvcbuild.bat
+	cd $(LUALIBPATH) && msvc140build.bat
 
 sider.obj: sider.cpp sider.h patterns.h common.h imageutil.h
 sider.dll: sider.obj imageutil.obj version.obj common.obj gameplay.obj sider.res $(LUALIBPATH)\$(LUALIB)
@@ -48,7 +48,7 @@ sider.exe: main.obj sider.dll sider_main.res
 	$(LINK) $(LFLAGS) /out:sider.exe main.obj sider_main.res $(LIBS) sider.lib
 
 zlibtool.obj: zlibtool.cpp
-zlibtool.exe: zlibtool.obj 
+zlibtool.exe: zlibtool.obj
     $(LINK) $(LFLAGS) /out:zlibtool.exe zlibtool.obj /LIBPATH:$(LPZLIB) $(LIBS) zdll.lib
 
 .cpp.obj:
