@@ -54,6 +54,8 @@ void write_stadium_choice_initial_cp();
 void write_stadium_choice_changed_cp1();
 void write_stadium_choice_changed_cp2();
 
+void set_game_speed_cp();
+
 char _ball_name[256];
 char _stadium_name[256];
 
@@ -482,6 +484,8 @@ public:
     DWORD _hp_before_read;
     DWORD _hp_at_read_file;
     DWORD _hp_at_set_file_pointer;
+    double _game_speed;
+    bool _enforce_game_speed;
 
     config_t(const wstring& section_name, const wchar_t* config_ini) : 
                  _section_name(section_name),
@@ -500,6 +504,8 @@ public:
                  _black_bars_off(false),
                  _close_sider_on_exit(false),
                  _start_minimized(false),
+                 _enforce_game_speed(false),
+                 _game_speed(0.0),
                  _hp_lookup_file(0),
                  _hp_get_file_info(0),
                  _hp_before_read(0),
@@ -544,6 +550,19 @@ public:
                     start = end + 1;
                 }
             }
+            else if (wcscmp(L"game.speed", key.c_str())==0) {
+                double game_speed = 0.0;
+                if (swscanf(value.c_str(), L"%lf", &game_speed)==1) {
+                    // clamp to [-15,15] range
+                    if (game_speed > 15.0) {
+                        game_speed = 15.0;
+                    }
+                    else if (game_speed < -15.0) {
+                        game_speed = -15.0;
+                    }
+                    _game_speed = game_speed;
+                }
+            }
             else if (wcscmp(L"cpk.root", key.c_str())==0) {
                 if (value[value.size()-1] != L'\\') {
                     value += L'\\';
@@ -563,7 +582,11 @@ public:
         _debug = GetPrivateProfileInt(_section_name.c_str(),
             L"debug", _debug,
             config_ini);
-        
+
+        _enforce_game_speed = GetPrivateProfileInt(_section_name.c_str(),
+            L"game.speed.enforce", _enforce_game_speed,
+            config_ini);
+
         _close_sider_on_exit = GetPrivateProfileInt(_section_name.c_str(),
             L"close.on.exit", _close_sider_on_exit,
             config_ini);
@@ -1472,6 +1495,8 @@ DWORD install_func(LPVOID thread_param) {
     _addr_cache = new addr_cache_t(&_cs);
 
     log_(L"debug = %d\n", _config->_debug);
+    log_(L"game.speed.enforce = %d\n", _config->_enforce_game_speed);
+    log_(L"game.speed = %0.3f\n", _config->_game_speed);
     log_(L"livecpk.enabled = %d\n", _config->_livecpk_enabled);
     log_(L"lookup-cache.enabled = %d\n", _config->_lookup_cache_enabled);
     log_(L"lua.enabled = %d\n", _config->_lua_enabled);
@@ -1894,6 +1919,23 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
                 log_(L"Unable to patch: (stadium-choice-changed) "
                      L"code patterns (1 and 2) not matched\n");
             }
+        }
+    }
+
+    // game speed
+    {
+        BYTE *p = find_code_frag(base, h->Misc.VirtualSize,
+            game_speed_pattern,
+            sizeof(game_speed_pattern)-1);
+        if (!p) {
+            log_(L"Unable to patch: (set-game-speed) code pattern not matched\n");
+        }
+        else {
+            log_(L"Code pattern found at offset: %08x (%08x)\n", (p-base), p);
+            log_(L"Enabled game speed modification\n");
+
+            hook_call_point((DWORD)(p + game_speed_off),
+                set_game_speed_cp, 6, 0);
         }
     }
 
@@ -3200,6 +3242,65 @@ void trophy_map_cp()
     }
 }
 
+DWORD set_game_speed(double *speed_value, int *divider)
+{
+    double d, effective_speed;
+    if (speed_value != NULL && divider != NULL) {
+        switch (*divider) {
+            case 42: // -2
+            case 45: // -1
+            case 48: //  0
+            case 51: //  1
+            case 54: //  2
+                // match speed
+                if (_config->_enforce_game_speed) {
+                    d = 48.0 * (1 + 0.0625 * _config->_game_speed);
+                    *speed_value = 1000000 / d;
+                }
+                effective_speed = (( 1000000 / *speed_value ) - 48.0 ) / 3.0;
+                log_(L"game speed value set to: %0.3f (%0.3f)\n", *speed_value, effective_speed);
+                break;
+            default:
+                DBG log_(L"speed value set to: %0.3f\n", *speed_value);
+        }
+    }
+    return 0;
+}
+
+void set_game_speed_cp()
+{
+    __asm {
+        // IMPORTANT: when saving flags, use pusfd/popfd, because Windows
+        // apparently checks for stack alignment and bad things happen, if it's not
+        // DWORD-aligned. (For example, all file operations fail!)
+        mov ebx,ecx
+        fstp qword ptr ds:[ecx+0x28]
+        pushfd
+        push ebp
+        push eax
+        push ebx
+        push ecx
+        push edx
+        push esi
+        push edi
+        lea eax,[ebp-0xc]
+        push eax  // value of speed divider (32-bit int)
+        lea eax,[ecx+0x28]
+        push eax  // address of speed value (64-bit double)
+        call set_game_speed
+        add esp,0x08     // pop parameters
+        pop edi
+        pop esi
+        pop edx
+        pop ecx
+        pop ebx
+        pop eax
+        pop ebp
+        popfd
+        retn
+    }
+}
+
 DWORD team_ids_read(DWORD *home_team_id_encoded, DWORD *away_team_id_encoded)
 {
     DWORD home=0, away=0;
@@ -4394,7 +4495,7 @@ LRESULT CALLBACK meconnect(int code, WPARAM wParam, LPARAM lParam)
 void setHook()
 {
     handle = SetWindowsHookEx(WH_CBT, meconnect, myHDLL, 0);
-    log_(L"--------------------\n");
+    log_(L"------------------------\n");
     log_(L"handle = %p\n", handle);
 }
 

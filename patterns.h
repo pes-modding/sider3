@@ -311,5 +311,14 @@ static BYTE ball_friction_pattern[31] =
     "\xdc\x0d";
 static int ball_friction_off = 30;
 
+// global: game speed
+static BYTE game_speed_pattern[15] =
+    "\xdd\x41\x28"
+    "\xdc\x41\x18"
+    "\xdd\x59\x18"
+    "\x8b\x41\x60"
+    "\x85\xc0";
+static int game_speed_off = 0x51;
+
 #endif
 
