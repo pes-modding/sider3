@@ -3,6 +3,7 @@ Makefile text eol=crlf
 *.c text eol=crlf
 *.h text eol=crlf
 *.cmd text eol=crlf
+*.bat text eol=crlf
 *.rc text eol=crlf
 *.txt text eol=crlf
 *.html text eol=crlf
