@@ -1492,7 +1492,9 @@ DWORD install_func(LPVOID thread_param) {
     _addr_cache = new addr_cache_t(&_cs);
 
     log_(L"debug = %d\n", _config->_debug);
-    log_(L"game.speed = %0.3f\n", *(_config->_game_speed));
+    if (_config->_game_speed) {
+        log_(L"game.speed = %0.3f\n", *(_config->_game_speed));
+    }
     log_(L"livecpk.enabled = %d\n", _config->_livecpk_enabled);
     log_(L"lookup-cache.enabled = %d\n", _config->_lookup_cache_enabled);
     log_(L"lua.enabled = %d\n", _config->_lua_enabled);
