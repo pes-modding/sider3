@@ -484,9 +484,11 @@ public:
     DWORD _hp_before_read;
     DWORD _hp_at_read_file;
     DWORD _hp_at_set_file_pointer;
-    double _game_speed;
-    bool _enforce_game_speed;
+    double *_game_speed;
 
+    ~config_t() {
+        if (_game_speed) delete _game_speed;
+    }
     config_t(const wstring& section_name, const wchar_t* config_ini) : 
                  _section_name(section_name),
                  _debug(false),
@@ -504,8 +506,7 @@ public:
                  _black_bars_off(false),
                  _close_sider_on_exit(false),
                  _start_minimized(false),
-                 _enforce_game_speed(false),
-                 _game_speed(0.0),
+                 _game_speed(NULL),
                  _hp_lookup_file(0),
                  _hp_get_file_info(0),
                  _hp_before_read(0),
@@ -560,7 +561,7 @@ public:
                     else if (game_speed < -15.0) {
                         game_speed = -15.0;
                     }
-                    _game_speed = game_speed;
+                    _game_speed = new double(game_speed);
                 }
             }
             else if (wcscmp(L"cpk.root", key.c_str())==0) {
@@ -581,10 +582,6 @@ public:
 
         _debug = GetPrivateProfileInt(_section_name.c_str(),
             L"debug", _debug,
-            config_ini);
-
-        _enforce_game_speed = GetPrivateProfileInt(_section_name.c_str(),
-            L"game.speed.enforce", _enforce_game_speed,
             config_ini);
 
         _close_sider_on_exit = GetPrivateProfileInt(_section_name.c_str(),
@@ -1495,8 +1492,7 @@ DWORD install_func(LPVOID thread_param) {
     _addr_cache = new addr_cache_t(&_cs);
 
     log_(L"debug = %d\n", _config->_debug);
-    log_(L"game.speed.enforce = %d\n", _config->_enforce_game_speed);
-    log_(L"game.speed = %0.3f\n", _config->_game_speed);
+    log_(L"game.speed = %0.3f\n", *(_config->_game_speed));
     log_(L"livecpk.enabled = %d\n", _config->_livecpk_enabled);
     log_(L"lookup-cache.enabled = %d\n", _config->_lookup_cache_enabled);
     log_(L"lua.enabled = %d\n", _config->_lua_enabled);
@@ -3244,7 +3240,7 @@ void trophy_map_cp()
 
 DWORD set_game_speed(double *speed_value, int *divider)
 {
-    double d, effective_speed;
+    double gs, d, effective_speed;
     if (speed_value != NULL && divider != NULL) {
         switch (*divider) {
             case 42: // -2
@@ -3253,8 +3249,9 @@ DWORD set_game_speed(double *speed_value, int *divider)
             case 51: //  1
             case 54: //  2
                 // match speed
-                if (_config->_enforce_game_speed) {
-                    d = 48.0 * (1 + 0.0625 * _config->_game_speed);
+                if (_config->_game_speed) {
+                    gs = *(_config->_game_speed);
+                    d = 48.0 * (1 + 0.0625 * gs);
                     *speed_value = 1000000 / d;
                 }
                 effective_speed = (( 1000000 / *speed_value ) - 48.0 ) / 3.0;
