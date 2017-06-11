@@ -339,5 +339,15 @@ static BYTE game_speed_pattern[15] =
     "\x85\xc0";
 static int game_speed_off = 0x51;
 
+// gfx: brigtness
+static BYTE brightness_pattern[21] =
+    "\x8b\x85\x9c\xfe\xff\xff"
+    "\x0f\x28\xc8"
+    "\x0f\xc6\xc8\xaa"
+    "\x0f\x28\xd8"
+    "\x0f\xc6\xd8\x55";
+static int brightness_off = -4;
+static int brightness_off_off = 4;
+
 #endif
 

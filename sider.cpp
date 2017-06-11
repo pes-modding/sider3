@@ -12,6 +12,7 @@
 #include "common.h"
 #include "patterns.h"
 #include "gameplay.h"
+#include "gfx.h"
 
 #include "lua.hpp"
 #include "lauxlib.h"
@@ -118,8 +119,10 @@ public:
     ~addr_cache_t() {
         log_(L"addr_cache: hits:%d, false_hits:%d, misses:%d, size:%d\n",
             _hits, _false_hits, _misses, _map.size());
-        log_(L"addr_cache: hit ratio: %0.1f %%\n",
-            _hits * 100.0 / (_hits + _false_hits + _misses));
+        int total = _hits + _false_hits + _misses;
+        if (total > 0) {
+            log_(L"addr_cache: hit ratio: %0.1f %%\n", _hits * 100.0 / total);
+        }
     }
     bool lookup(char *filename, wstring **res) {
         EnterCriticalSection(_acs);
@@ -1320,6 +1323,9 @@ static void push_env_table(lua_State *L, const wchar_t *script_name)
     // gameplay lib
     init_gameplay_lib(L);
 
+    // gfx lib
+    init_gfx_lib(L);
+
     // set _G
     lua_pushvalue(L, -1);
     lua_setfield(L, -2, "_G");
@@ -1940,6 +1946,11 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
     // gameplay
     if (_config->_lua_enabled) {
         lookup_gameplay_locations(base, h);
+    }
+
+    // gfx
+    if (_config->_lua_enabled) {
+        lookup_gfx_locations(base, h);
     }
 
     if (_config->_livecpk_enabled) {
