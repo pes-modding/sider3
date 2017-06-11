@@ -317,6 +317,19 @@ static BYTE ball_magnus_pattern[9] =
     "\xdc\x25";
 static int ball_magnus_off = 8;
 
+// gameplay: ball size: x
+static BYTE ball_scale_pattern[15] =
+    "\x31\xe8"
+    "\x89\x85\xfc\xff\xff\xff"
+    "\x8b\x43\x0c"
+    "\x0f\x28\x0d";
+static int ball_scale_x_off = 21;
+static int ball_scale_x_off_off = 0;
+static int ball_scale_y_off = 28;
+static int ball_scale_y_off_off = 4;
+static int ball_scale_z_off = 35;
+static int ball_scale_z_off_off = 8;
+
 // global: game speed
 static BYTE game_speed_pattern[15] =
     "\xdd\x41\x28"

@@ -13,6 +13,11 @@ using namespace std;
 typedef int (*getter_t)(lua_State *L, DWORD addr);
 typedef int (*setter_t)(lua_State *L, DWORD addr);
 
+void init_gameplay_property(
+    BYTE *base, IMAGE_SECTION_HEADER *h,
+    const char *prop, getter_t get, setter_t set,
+    BYTE *pattern, size_t pattern_len, int off, int addr_off=0);
+
 struct handler_t {
     DWORD addr;
     getter_t get;
@@ -103,7 +108,7 @@ static int gameplay_set(lua_State *L)
 static void init_gameplay_property(
     BYTE *base, IMAGE_SECTION_HEADER *h,
     const char *prop, getter_t get, setter_t set,
-    BYTE *pattern, size_t pattern_len, int off)
+    BYTE *pattern, size_t pattern_len, int off, int addr_off)
 {
     BYTE *p;
     DWORD addr;
@@ -118,11 +123,11 @@ static void init_gameplay_property(
         logu_("Code pattern found at offset: %08x (%08x)\n", (p-base), p);
 
         addr = *(DWORD*)(p + off);
-        ht.addr = addr;
+        ht.addr = addr + addr_off;
         ht.get = get;
         ht.set = set;
         _gameplay.insert(pair<string, struct handler_t>(name, ht));
-        logu_("Enabling gameplay mod: %s ( % p )\n", name.c_str(), addr);
+        logu_("Enabling gameplay mod: %s ( % p )\n", name.c_str(), addr + addr_off);
     }
 }
 
@@ -152,6 +157,21 @@ void lookup_gameplay_locations(BYTE *base, IMAGE_SECTION_HEADER *h)
         "ball_magnus", value_get_double, value_set_double,
         ball_magnus_pattern, sizeof(ball_magnus_pattern)-1,
         ball_magnus_off);
+
+    init_gameplay_property(base, h,
+        "ball_scale_x", value_get_float, value_set_float,
+        ball_scale_pattern, sizeof(ball_scale_pattern)-1,
+        ball_scale_x_off, ball_scale_x_off_off);
+
+    init_gameplay_property(base, h,
+        "ball_scale_y", value_get_float, value_set_float,
+        ball_scale_pattern, sizeof(ball_scale_pattern)-1,
+        ball_scale_y_off, ball_scale_y_off_off);
+
+    init_gameplay_property(base, h,
+        "ball_scale_z", value_get_float, value_set_float,
+        ball_scale_pattern, sizeof(ball_scale_pattern)-1,
+        ball_scale_z_off, ball_scale_z_off_off);
 
     init_gameplay_property(base, h,
         "shooting_power", value_get_double, value_set_double,
