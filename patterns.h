@@ -311,6 +311,12 @@ static BYTE ball_friction_pattern[31] =
     "\xdc\x0d";
 static int ball_friction_off = 30;
 
+// gameplay: ball magnus
+static BYTE ball_magnus_pattern[9] =
+    "\xd9\x86\xd4\x1f\x00\x00"
+    "\xdc\x25";
+static int ball_magnus_off = 8;
+
 // global: game speed
 static BYTE game_speed_pattern[15] =
     "\xdd\x41\x28"

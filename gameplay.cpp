@@ -149,6 +149,11 @@ void lookup_gameplay_locations(BYTE *base, IMAGE_SECTION_HEADER *h)
         ball_friction_off);
 
     init_gameplay_property(base, h,
+        "ball_magnus", value_get_double, value_set_double,
+        ball_magnus_pattern, sizeof(ball_magnus_pattern)-1,
+        ball_magnus_off);
+
+    init_gameplay_property(base, h,
         "shooting_power", value_get_double, value_set_double,
         shot_power_pattern, sizeof(shot_power_pattern)-1,
         shot_power_off);
