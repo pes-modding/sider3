@@ -53,6 +53,10 @@ function m.set_conditions(ctx, options)
     tlog("ctx: %s", t2s(ctx))
 end
 
+function m.after_set_conditions(ctx)
+    tlog("after_set_conditions: ctx: %s", t2s(ctx))
+end
+
 function m.set_stadium_for_replay(ctx, options)
     tlog("replay-stadium: %s", options.stadium)
     tlog("ctx: %s", t2s(ctx))
@@ -61,6 +65,10 @@ end
 function m.set_conditions_for_replay(ctx, options)
     tlog("replay-conditions: %s", t2s(options))
     tlog("ctx: %s", t2s(ctx))
+end
+
+function m.after_set_conditions_for_replay(ctx)
+    tlog("after_set_conditions_for_replay: ctx: %s", t2s(ctx))
 end
 
 function m.enter_edit_mode(ctx)
@@ -91,8 +99,10 @@ function m.init(ctx)
    ctx.register("set_stadium_choice", m.set_stadium_choice)
    ctx.register("set_stadium", m.set_stadium)
    ctx.register("set_conditions", m.set_conditions)
+   ctx.register("after_set_conditions", m.after_set_conditions)
    ctx.register("set_stadium_for_replay", m.set_stadium_for_replay)
    ctx.register("set_conditions_for_replay", m.set_conditions_for_replay)
+   ctx.register("after_set_conditions_for_replay", m.after_set_conditions_for_replay)
    ctx.register("enter_edit_mode", m.enter_edit_mode)
    ctx.register("exit_edit_mode", m.exit_edit_mode)
    ctx.register("enter_replay_gallery", m.enter_replay_gallery)
