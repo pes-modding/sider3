@@ -401,6 +401,15 @@ three settings: just assign them different values.
 For an example usage - see stadium.lua module.
 
 
+- Event name: "after_set_conditions"
+Handler function: f(ctx)
+Return value expected: nil
+
+This event fires after "set_conditions". It doesn't allow the handler
+to change anything, but it does provide the context object so that the
+modules can react in whatever way they want.
+
+
 - Event name: "set_stadium_for_replay"
 Handler function: f(ctx, options)
 Return value expected: nil or number or table
@@ -420,6 +429,15 @@ right after "set_stadium_for_replay". Same behaviour as with "set_conditions"
 event. If you return a table with values, then you can modify the weather,
 season, and timeofday of the replay. Return nil, if you don't want to
 modify any of those.
+
+
+- Event name: "after_set_conditions"
+Handler function: f(ctx)
+Return value expected: nil
+
+This event fires after "set_conditions_for_replay". It doesn't
+allow the handler to change anything, but it does provide the context
+object so that the modules can react in whatever way they want.
 
 
 -- Event name: "get_ball_name"

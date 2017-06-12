@@ -213,8 +213,10 @@ struct module_t {
     int evt_set_stadium_choice;
     int evt_set_stadium;
     int evt_set_conditions;
+    int evt_after_set_conditions;
     int evt_set_stadium_for_replay;
     int evt_set_conditions_for_replay;
+    int evt_after_set_conditions_for_replay;
     int evt_get_ball_name;
     int evt_get_stadium_name;
     int evt_enter_edit_mode;
@@ -1177,6 +1179,12 @@ static int sider_context_register(lua_State *L)
         _curr_m->evt_set_conditions = lua_gettop(_curr_m->L);
         logu_("Registered for \"%s\" event\n", event_key);
     }
+    else if (strcmp(event_key, "after_set_conditions")==0) {
+        lua_pushvalue(L, -1);
+        lua_xmove(L, _curr_m->L, 1);
+        _curr_m->evt_after_set_conditions = lua_gettop(_curr_m->L);
+        logu_("Registered for \"%s\" event\n", event_key);
+    }
     else if (strcmp(event_key, "set_stadium_for_replay")==0) {
         lua_pushvalue(L, -1);
         lua_xmove(L, _curr_m->L, 1);
@@ -1187,6 +1195,12 @@ static int sider_context_register(lua_State *L)
         lua_pushvalue(L, -1);
         lua_xmove(L, _curr_m->L, 1);
         _curr_m->evt_set_conditions_for_replay = lua_gettop(_curr_m->L);
+        logu_("Registered for \"%s\" event\n", event_key);
+    }
+    else if (strcmp(event_key, "after_set_conditions_for_replay")==0) {
+        lua_pushvalue(L, -1);
+        lua_xmove(L, _curr_m->L, 1);
+        _curr_m->evt_after_set_conditions_for_replay = lua_gettop(_curr_m->L);
         logu_("Registered for \"%s\" event\n", event_key);
     }
     else if (strcmp(event_key, "get_ball_name")==0) {
@@ -2579,6 +2593,25 @@ bool module_set_conditions(module_t *m, MATCH_INFO_STRUCT *mi)
     return res;
 }
 
+bool module_after_set_conditions(module_t *m)
+{
+    bool res(false);
+    if (m->evt_after_set_conditions != 0) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(m->L, m->evt_after_set_conditions);
+        lua_xmove(m->L, L, 1);
+        // push params
+        lua_pushvalue(L, 1); // ctx
+        if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
+            const char *err = luaL_checkstring(L, -1);
+            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
+        }
+        lua_pop(L, 1);
+        LeaveCriticalSection(&_cs);
+    }
+    return res;
+}
+
 bool module_set_stadium_for_replay(module_t *m, STAD_STRUCT *ss)
 {
     bool res(false);
@@ -2659,6 +2692,25 @@ bool module_set_conditions_for_replay(module_t *m, STAD_STRUCT *ss)
             }
             lua_pop(L, 1);
             res = true;
+        }
+        lua_pop(L, 1);
+        LeaveCriticalSection(&_cs);
+    }
+    return res;
+}
+
+bool module_after_set_conditions_for_replay(module_t *m)
+{
+    bool res(false);
+    if (m->evt_after_set_conditions_for_replay != 0) {
+        EnterCriticalSection(&_cs);
+        lua_pushvalue(m->L, m->evt_after_set_conditions_for_replay);
+        lua_xmove(m->L, L, 1);
+        // push params
+        lua_pushvalue(L, 1); // ctx
+        if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
+            const char *err = luaL_checkstring(L, -1);
+            logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
         }
         lua_pop(L, 1);
         LeaveCriticalSection(&_cs);
@@ -3725,6 +3777,11 @@ DWORD write_stadium(STAD_STRUCT *ss)
         // clear stadium_choice in context
         set_context_field_nil("stadium_choice");
         _had_stadium_choice = false;
+
+        for (i = _modules.begin(); i != _modules.end(); i++) {
+            module_t *m = *i;
+            module_after_set_conditions(m);
+        }
     }
 
     DBG log_(L"stadium=%d, timeofday=%d, weather=%d, season=%d\n",
@@ -3820,6 +3877,14 @@ DWORD write_stadium_for_replay(STAD_STRUCT *ss, REPLAY_INFO *ri)
                 ss->stadium = stads[0].stadium_id;
                 log_(L"Switching replay to stadium: %d\n", ss->stadium);
             }
+        }
+    }
+
+    if (_config->_lua_enabled) {
+        list<module_t*>::iterator i;
+        for (i = _modules.begin(); i != _modules.end(); i++) {
+            module_t *m = *i;
+            module_after_set_conditions_for_replay(m);
         }
     }
 
