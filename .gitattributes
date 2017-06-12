@@ -9,3 +9,4 @@ Makefile text eol=crlf
 *.ini text eol=crlf
 *.html text eol=crlf
 *.lua text eol=crlf
+*.md text eol=crlf
