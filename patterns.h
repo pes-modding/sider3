@@ -339,7 +339,7 @@ static BYTE game_speed_pattern[15] =
     "\x85\xc0";
 static int game_speed_off = 0x51;
 
-// gfx: brigtness
+// gfx: brightness
 static BYTE brightness_pattern[21] =
     "\x8b\x85\x9c\xfe\xff\xff"
     "\x0f\x28\xc8"
@@ -357,6 +357,25 @@ static BYTE sharpness_pattern[21] =
     "\x0f\x28\x05";
 static int sharpness_off = 20;
 static int sharpness_off_off = 8;
+
+// gfx: shadow softness
+static BYTE shadow_softness_pattern[24] =
+    "\x0f\xc6\xd0\x55"
+    "\x0f\x59\x50\x10"
+    "\x0f\xc6\xc0\x00"
+    "\x0f\x59\xc3"
+    "\xf3\x0f\x10\x9d\xbc\xff\xff\xff";
+static int shadow_softness_off = 29;
+
+// gfx: reflection
+static BYTE reflection_pattern[30] =
+    "\x0f\x29\x85\xc0\xff\xff\xff"
+    "\x0f\xc6\xdb\x39"
+    "\x0f\x28\xeb"
+    "\x0f\xc6\xeb\x39"
+    "\x0f\x29\x9d\xb0\xff\xff\xff"
+    "\xf3\x0f\x10\x1d";
+static int reflection_off = 29;
 
 #endif
 

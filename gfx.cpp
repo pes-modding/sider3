@@ -142,6 +142,16 @@ void lookup_gfx_locations(BYTE *base, IMAGE_SECTION_HEADER *h)
         "sharpness", value_get_float, value_set_float,
         sharpness_pattern, sizeof(sharpness_pattern)-1,
         sharpness_off, sharpness_off_off);
+
+    init_gfx_property(base, h,
+        "shadow_softness", value_get_float, value_set_float,
+        shadow_softness_pattern, sizeof(shadow_softness_pattern)-1,
+        shadow_softness_off, 0);
+
+    init_gfx_property(base, h,
+        "reflection", value_get_float, value_set_float,
+        reflection_pattern, sizeof(reflection_pattern)-1,
+        reflection_off, 0);
 }
 
 void init_gfx_lib(lua_State *L)
