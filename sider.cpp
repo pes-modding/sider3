@@ -4418,7 +4418,7 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
 
                 wstring version;
                 get_module_version(hDLL, version);
-                log_(L"===\n");
+                log_(L"============================\n");
                 log_(L"Sider DLL: version %s\n", version.c_str());
                 log_(L"Filename match: %s\n", match->c_str());
                 install_func(NULL);
