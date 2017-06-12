@@ -16,7 +16,7 @@ ZLIBDLL=soft\zlib123-dll\zlib1.dll
 
 # 4731: warning about ebp modification
 CFLAGS=/nologo /Od /EHsc /wd4731 $(EXTRA_CFLAGS)
-LFLAGS=/NOLOGO /VERBOSE
+LFLAGS=/NOLOGO
 #LIBS=user32.lib gdi32.lib advapi32.lib comctl32.lib shell32.lib shlwapi.lib
 LIBS=user32.lib gdi32.lib comctl32.lib version.lib
 LIBSDLL=pngdib.obj libpng.a zdll.lib $(LIBS)
@@ -39,14 +39,14 @@ imageutil.obj: imageutil.cpp imageutil.h
 version.obj: version.cpp
 
 $(LUALIBPATH)\$(LUALIB):
-	cd $(LUALIBPATH) && msvc140build.bat
+	cd $(LUALIBPATH) && msvcbuild.bat
 
 sider.obj: sider.cpp sider.h patterns.h common.h imageutil.h
 sider.dll: sider.obj imageutil.obj version.obj common.obj gameplay.obj gfx.obj sider.res $(LUALIBPATH)\$(LUALIB)
-	$(LINK) $(LFLAGS) /out:sider.dll /DLL sider.obj imageutil.obj version.obj common.obj gameplay.obj gfx.obj sider.res /LIBPATH:$(LUALIBPATH) $(LIBS) $(LUALIB)
+	$(LINK) $(LFLAGS) /out:sider.dll /DLL sider.obj imageutil.obj version.obj common.obj gameplay.obj gfx.obj sider.res /LIBPATH:$(LUALIBPATH) $(LIBS) $(LUALIB) /LIBPATH:"$(LIB)"
 
 sider.exe: main.obj sider.dll sider_main.res
-	$(LINK) $(LFLAGS) /out:sider.exe main.obj sider_main.res $(LIBS) sider.lib
+	$(LINK) $(LFLAGS) /out:sider.exe main.obj sider_main.res $(LIBS) sider.lib /LIBPATH:"$(LIB)"
 
 zlibtool.obj: zlibtool.cpp
 zlibtool.exe: zlibtool.obj
