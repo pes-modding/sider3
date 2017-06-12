@@ -2593,9 +2593,8 @@ bool module_set_conditions(module_t *m, MATCH_INFO_STRUCT *mi)
     return res;
 }
 
-bool module_after_set_conditions(module_t *m)
+void module_after_set_conditions(module_t *m)
 {
-    bool res(false);
     if (m->evt_after_set_conditions != 0) {
         EnterCriticalSection(&_cs);
         lua_pushvalue(m->L, m->evt_after_set_conditions);
@@ -2606,10 +2605,8 @@ bool module_after_set_conditions(module_t *m)
             const char *err = luaL_checkstring(L, -1);
             logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
         }
-        lua_pop(L, 1);
         LeaveCriticalSection(&_cs);
     }
-    return res;
 }
 
 bool module_set_stadium_for_replay(module_t *m, STAD_STRUCT *ss)
@@ -2699,9 +2696,8 @@ bool module_set_conditions_for_replay(module_t *m, STAD_STRUCT *ss)
     return res;
 }
 
-bool module_after_set_conditions_for_replay(module_t *m)
+void module_after_set_conditions_for_replay(module_t *m)
 {
-    bool res(false);
     if (m->evt_after_set_conditions_for_replay != 0) {
         EnterCriticalSection(&_cs);
         lua_pushvalue(m->L, m->evt_after_set_conditions_for_replay);
@@ -2712,10 +2708,8 @@ bool module_after_set_conditions_for_replay(module_t *m)
             const char *err = luaL_checkstring(L, -1);
             logu_("[%d] lua ERROR: %s\n", GetCurrentThreadId(), err);
         }
-        lua_pop(L, 1);
         LeaveCriticalSection(&_cs);
     }
-    return res;
 }
 
 bool module_rewrite(module_t *m, const char *file_name)
