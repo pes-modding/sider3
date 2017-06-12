@@ -1,7 +1,7 @@
 Sider 3 Lua Module Programmers Guide
 ====================================
-For sider.dll version: 3.4.3
-May 23, 2017
+For sider.dll version: 3.5.0
+June 11, 2017
 
 
 
@@ -104,7 +104,7 @@ of the game. As more scripts/modules are created by the community
 the context object will probably also change, and include more and more
 information about the game.
 
-As of 3.4.3 release, this is what the context object has:
+As of 3.5.0 release, this is what the context object has:
 
 ctx.home_team  - id of the home team of the current match, after
                  it is selected in the exhibition match, or the next
@@ -515,7 +515,7 @@ Standard Lua:
     assert, ipairs, pairs, tostring, tonumber, table,
     string, math, unpack, type, error, io, os, _VERSION, _G
 Sider:
-    log, memory, gameplay, _FILE
+    log, memory, gameplay, gfx, _FILE
 
 You can also enable "ffi" and "bit" modules, which are LuaJIT
 extensions. By default, they are disabled. To enable, modify your
@@ -645,6 +645,25 @@ quicker. Positive values actually make the ball accelerate as it moves,
 which is fun, but totally unrealistic.
 
 
+gameplay.ball_magnus
+
+Default value: 0.1086859330534935
+"Magnus effect" for the ball: sideways movement in the air, due to
+rotation. This also seems to have effect when the ball is passed on
+the ground.
+
+
+gameplay.ball_scale_x
+gameplay.ball_scale_y
+gameplay.ball_scale_z
+
+Default values: 1.0, 1.0, 1.0
+Scaling matrix for the ball. Normal size is all three values set to 1.0.
+You can make the ball smaller/larger by setting all three settings to
+the same value: <1 - smaller, >1 - larger ball. Setting one parameter
+to a different value from the other two gives a rugby-type ball.
+
+
 gameplay.shooting_power
 
 Default value: 0.85
@@ -683,4 +702,45 @@ example, but not much more complicated: it uses an ini-file, which is
 read every time a new set of teams in selected. This allows you to modify
 the gameplay for each new match, without exiting the game (if you change
 the values in gameplay.ini)
+
+
+
+9. Graphics Effects ("gfx") library
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Some subtle and not so subtle visual effects are possible with this
+new library:
+
+
+gfx.brightness
+
+Default value: 1.0
+Brightness of the full screen
+
+
+gfx.sharpness
+
+Default value: 0.166
+Sharpness of the picture during gameplay
+
+
+gfx.shadow_softness
+
+Default value: 0.5
+This parameter appears to affect the softness/hardness of shadows that
+players cast onto themselves. Try experimenting with the values.
+
+
+gfx.reflection
+
+Default value: 1.0
+Specifies how reflective/shiny the players are. Negative values seem
+to provide more refection. (Try setting it to -10000.
+A side-effect of this: disappearance of spectators from the stadium.)
+
+
+See modules/gfx.lua - for a simple example of how gfx library
+can be used: every time a set of teams is selected for a match or time
+is advanced to next match in league/cup modes, a gfx.ini file is read,
+and graphics effects settings are applied.
 
