@@ -349,5 +349,14 @@ static BYTE brightness_pattern[21] =
 static int brightness_off = -4;
 static int brightness_off_off = 4;
 
+// gfx: sharpness
+static BYTE sharpness_pattern[21] =
+    "\xd9\x9d\xdc\xff\xff\xff"
+    "\xf3\x0f\x10\x95\xdc\xff\xff\xff"
+    "\x0f\x14\xd0"
+    "\x0f\x28\x05";
+static int sharpness_off = 20;
+static int sharpness_off_off = 8;
+
 #endif
 
