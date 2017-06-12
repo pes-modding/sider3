@@ -1,5 +1,5 @@
-# For release builds, use "debug=1" in command line. For instance,
-# to build DLLs in release mode: nmake dlls debug=1
+# For debug builds, use "debug=1" in command line. For instance,
+# to build DLLs in debug mode: nmake dlls debug=1
 
 CC=cl
 LINK=link
