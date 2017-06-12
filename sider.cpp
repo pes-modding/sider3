@@ -392,17 +392,7 @@ BYTE code_follows[10] =
 BYTE code_free_first[4] = 
     "\x0f\x94\xd0"; // sete al
 
-BYTE org_cut_scenes[6];
-BYTE cut_scenes_code[] =
-    "\xc7\x06\x30\x00\x01\x00"; // mov dword ptr ds:[esi],10030
-
 BYTE cam_sliders_code_pat1[10] =
-    //"\x74\x66"
-    //"\x4e"
-    //"\x74\x1a"
-    //"\x4e"
-    //"\x74\x0d"
-    //"\x4e";
     "\x4f"
     "\x74\x20"
     "\x4f"
@@ -410,16 +400,13 @@ BYTE cam_sliders_code_pat1[10] =
     "\x4f"
     "\x75\x41";
 
-BYTE cam_sliders_code_off1 = 0x2f; //0x28;
+BYTE cam_sliders_code_off1 = 0x2f;
 
-BYTE cam_sliders_code_pat2[14] = //[8] =
-    //"\x8b\x45\xcc"
-    //"\x8b\x4d\xd0"
-    //"\x50";
+BYTE cam_sliders_code_pat2[14] =
     "\x8b\x85\xcc\xff\xff\xff"
     "\x8b\x8d\xd0\xff\xff\xff"
     "\x50";
-BYTE cam_sliders_code_off2 = 0x19; //0x13;
+BYTE cam_sliders_code_off2 = 0x19;
 
 BYTE cam_sliders_code_pat3[9] =
     "\x4f"
@@ -430,22 +417,19 @@ BYTE cam_sliders_code_pat3[9] =
     "\x75";
 BYTE cam_sliders_code_off3 = 0x23;
 
-BYTE cam_dynamic_wide_pat1[9] = //[13] = 
-    //"\xd9\x5d\xb8"
-    //"\xd9\x86\xb0\x00\x00\x00"
-    //"\xd9\x45\xe0";
+BYTE cam_dynamic_wide_pat1[9] =
     "\xeb\x77"
     "\xd9\x85\xe8\xff\xff\xff";
-BYTE cam_dynamic_wide_off1 = 1; //0x1e;
+BYTE cam_dynamic_wide_off1 = 1;
 BYTE cam_dynamic_wide_patch1[2] = "\x30";
 BYTE cam_dynamic_wide_org1[2];
-BYTE cam_dynamic_wide_off2 = 0x6a; //0x54;
+BYTE cam_dynamic_wide_off2 = 0x6a;
 BYTE cam_dynamic_wide_patch2[3] = "\x90\x90";
 BYTE cam_dynamic_wide_org2[3];
 
 BYTE cam_dynamic_wide_pat3[9] =
     "\x80\xfa\x04"
-    "\x77\x25" //"\x77\x1f"
+    "\x77\x25"
     "\x0f\xb6\xc2";
 BYTE cam_dynamic_wide_off3 = 2;
 BYTE cam_dynamic_wide_patch3[2] = "\x06";
@@ -478,7 +462,6 @@ public:
     list<wstring> _module_names;
     bool _free_select_sides;
     bool _free_first_player;
-    bool _cut_scenes;
     int _camera_sliders_max;
     bool _camera_dynamic_wide_angle_enabled;
     bool _black_bars_off;
@@ -505,7 +488,6 @@ public:
                  _dll_mapping_option(0),
                  _free_select_sides(false),
                  _free_first_player(false),
-                 _cut_scenes(false),
                  _camera_sliders_max(0),
                  _camera_dynamic_wide_angle_enabled(false),
                  _black_bars_off(false),
@@ -632,10 +614,6 @@ public:
         _black_bars_off = GetPrivateProfileInt(_section_name.c_str(),
             L"black.bars.off", _black_bars_off,
             config_ini);
-
-        //_cut_scenes = GetPrivateProfileInt(_section_name.c_str(),
-        //    L"cut.scenes", _cut_scenes,
-        //    config_ini);
 
         _camera_sliders_max = GetPrivateProfileInt(_section_name.c_str(),
             L"camera.sliders.max", _camera_sliders_max,
@@ -1085,19 +1063,6 @@ BYTE* find_free_first(BYTE *base, DWORD max_offset)
     BYTE *p = base;
     BYTE *max_p = base + max_offset;
     while (p < max_p && memcmp(p, code_free_first, 3)!=0) {
-        p += 1;
-    }
-    if (p < max_p) {
-        return p;
-    }
-    return NULL;
-}
-
-BYTE* find_cut_scenes(BYTE *base, DWORD max_offset)
-{
-    BYTE *p = base;
-    BYTE *max_p = base + max_offset;
-    while (p < max_p && memcmp(p, cut_scenes_code, 6)!=0) {
         p += 1;
     }
     if (p < max_p) {
@@ -2077,29 +2042,6 @@ bool _install_func(IMAGE_SECTION_HEADER *h) {
                 VirtualProtect(c, 8, oldProtection, &newProtection);
                 log_(L"Free first player: enabled.\n");
                 patched2 = true;
-            }
-            else {
-                log_(L"PROBLEM with Virtual Protect.\n");
-            }
-        }
-    }
-
-    if (_config->_cut_scenes) {
-        place2 = find_cut_scenes(base, h->Misc.VirtualSize);
-        if (!place2) {
-            log_(L"Unable to patch: (cut-scenes) code pattern not matched\n"); 
-        }
-        else {
-            c = place2;
-            log_(L"Code pattern found at offset: %08x\n", (c-base));  
-
-            newProtection = PAGE_EXECUTE_READWRITE;
-            if (VirtualProtect(c, 8, newProtection, &oldProtection)) {
-                memcpy(org_cut_scenes, c, 6);
-                memcpy(c, "\x90\x90\x90\x90\x90\x90", 6);
-                VirtualProtect(c, 8, oldProtection, &newProtection);
-                log_(L"Cut scenes: enabled.\n");
-                patched3 = true;
             }
             else {
                 log_(L"PROBLEM with Virtual Protect.\n");
