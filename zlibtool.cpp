@@ -1,8 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
+#include <errno.h>
 #include <sys/stat.h>
-#include "soft\zlib123-dll\include\zlib.h"
+#include "soft/zlib123-dll/include/zlib.h"
 
 #define BYTE unsigned char
 #define UCHAR unsigned char
@@ -23,7 +25,7 @@ int main(int argc, char *argv[])
         return 1;
     }
     struct stat st;
-    fstat(_fileno(inf),&st);
+    fstat(fileno(inf),&st);
     BYTE* src = (BYTE*)malloc(st.st_size);
     fread(src,st.st_size,1,inf);
     fclose(inf);
@@ -44,7 +46,8 @@ int main(int argc, char *argv[])
         sprintf(outname,"%s.zlib",argv[1]);
 
     } else if (strcmp(argv[2],"-d")==0) {
-        destLen = *(uLongf*)(src + 0x0c);
+        uint32_t sz = *(uint32_t*)(src+0x0c);
+        destLen = (uLongf)sz;
         dest = (BYTE*)malloc(destLen); // big enough buffer
 
         int retval = uncompress(dest,&destLen,src+0x10,st.st_size-0x10);
