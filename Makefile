@@ -25,6 +25,8 @@ LUAINC=/I soft\LuaJIT-2.0.4\src
 LUALIBPATH=soft\LuaJIT-2.0.4\src
 LUALIB=lua51.lib
 
+MAINC=/I soft\miniaudio
+
 all: sider.exe sider.dll
 
 sider.res: sider.rc
@@ -32,6 +34,7 @@ sider.res: sider.rc
 sider_main.res: sider_main.rc sider.ico
 	$(RC) -r -fo sider_main.res sider_main.rc
 
+audio.obj: audio.cpp audio.h sider.h common.h
 common.obj: common.cpp common.h
 gameplay.obj: gameplay.cpp gameplay.h patterns.h common.h sider.h imageutil.h
 gfx.obj: gfx.cpp gfx.h patterns.h common.h sider.h imageutil.h
@@ -41,9 +44,9 @@ version.obj: version.cpp
 $(LUALIBPATH)\$(LUALIB):
 	cd $(LUALIBPATH) && msvcbuild.bat
 
-sider.obj: sider.cpp sider.h patterns.h common.h imageutil.h
-sider.dll: sider.obj imageutil.obj version.obj common.obj gameplay.obj gfx.obj sider.res $(LUALIBPATH)\$(LUALIB)
-	$(LINK) $(LFLAGS) /out:sider.dll /DLL sider.obj imageutil.obj version.obj common.obj gameplay.obj gfx.obj sider.res /LIBPATH:$(LUALIBPATH) $(LIBS) $(LUALIB) /LIBPATH:"$(LIB)"
+sider.obj: sider.cpp sider.h patterns.h common.h imageutil.h audio.h
+sider.dll: sider.obj imageutil.obj version.obj common.obj gameplay.obj gfx.obj audio.obj sider.res $(LUALIBPATH)\$(LUALIB)
+	$(LINK) $(LFLAGS) /out:sider.dll /DLL sider.obj imageutil.obj version.obj common.obj gameplay.obj gfx.obj audio.obj sider.res /LIBPATH:$(LUALIBPATH) $(LIBS) $(LUALIB) /LIBPATH:"$(LIB)"
 
 sider.exe: main.obj sider.dll sider_main.res
 	$(LINK) $(LFLAGS) /out:sider.exe main.obj sider_main.res $(LIBS) sider.lib /LIBPATH:"$(LIB)"
@@ -53,7 +56,7 @@ zlibtool.exe: zlibtool.obj
     $(LINK) $(LFLAGS) /out:zlibtool.exe zlibtool.obj /LIBPATH:$(LPZLIB) $(LIBS) zdll.lib
 
 .cpp.obj:
-	$(CC) $(CFLAGS) -c $(INC) $(LUAINC) $<
+	$(CC) $(CFLAGS) -c $(INC) $(LUAINC) $(MAINC) $<
 
 clean:
 	del *.obj *.dll *.exp *.res *.lib *.exe *~

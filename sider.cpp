@@ -13,6 +13,7 @@
 #include "patterns.h"
 #include "gameplay.h"
 #include "gfx.h"
+#include "audio.h"
 
 #include "lua.hpp"
 #include "lauxlib.h"
@@ -28,6 +29,8 @@ using namespace std;
 
 CRITICAL_SECTION _cs;
 lua_State *L = NULL;
+
+int _audio_lib_index = 0;
 
 void lcpk_lookup_file_cp();
 void lcpk_get_file_info_cp();
@@ -1305,6 +1308,10 @@ static void push_env_table(lua_State *L, const wchar_t *script_name)
     // gfx lib
     init_gfx_lib(L);
 
+    // audio lib
+    lua_pushvalue(L, _audio_lib_index);
+    lua_setfield(L, -2, "audio");
+
     // set _G
     lua_pushvalue(L, -1);
     lua_setfield(L, -2, "_G");
@@ -1342,6 +1349,10 @@ void init_lua_support()
 
         // prepare context table
         push_context_table(L);
+
+        // audio library
+        init_audio_lib(L);
+        _audio_lib_index = lua_gettop(L);
 
         // load registered modules
         for (list<wstring>::iterator it = _config->_module_names.begin();
@@ -2271,6 +2282,19 @@ void module_set_tid(module_t *m, int tid)
         }
         LeaveCriticalSection(&_cs);
     }
+}
+
+void module_call_callback_with_context(lua_State *L, lua_State *from_L, int callback_index) {
+    EnterCriticalSection(&_cs);
+    lua_pushvalue(from_L, callback_index);
+    lua_xmove(from_L, L, 1);
+    lua_pushvalue(L, 1); // ctx
+    if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
+        const char *err = luaL_checkstring(L, -1);
+        logu_("[%d] lua ERROR from module_call_callback_with_context: %s\n",
+            GetCurrentThreadId(), err);
+    }
+    LeaveCriticalSection(&_cs);
 }
 
 bool module_set_match_time(module_t *m, DWORD *num_minutes)
@@ -4358,6 +4382,9 @@ INT APIENTRY DllMain(HMODULE hDLL, DWORD Reason, LPVOID Reserved)
                 log_(L"Sider DLL: version %s\n", version.c_str());
                 log_(L"Filename match: %s\n", match->c_str());
                 install_func(NULL);
+
+                // initialize audio lib
+                audio_init();
 
                 delete match;
                 return TRUE;
