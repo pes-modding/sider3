@@ -185,3 +185,8 @@ Test content:
 EPL High-Visibility ball: by -cRoNoS-
 EPL Trophy and FA Community Shield: by Ronito
 Manchester United GK kits: by G-Style
+
+Sider uses the following 3rd-party software:
+
+LuaJIT by Mike Pall (license-luajit.txt)
+miniaudio by David Reid (license-ma.txt)
